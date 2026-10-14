@@ -42,16 +42,23 @@ func _ready() -> void:
 	_avoid_side = 1.0 if randf() < 0.5 else -1.0
 
 	# Har enemy ka apna material copy -> sirf wahi enemy laal flash kare
-	for mesh in [body_mesh, head_mesh]:
-		var mat := mesh.get_active_material(0)
-		if mat != null:
-			var copy := mat.duplicate() as StandardMaterial3D
-			if copy != null:
-				mesh.material_override = copy
-				_materials.append(copy)
-				_base_colors.append(copy.albedo_color)
+	_make_flash_material(body_mesh)
+	_make_flash_material(head_mesh)
 
 	_find_player()
+
+
+## Ek mesh ka material copy karke usko flash karne layak banata hai
+func _make_flash_material(mesh: MeshInstance3D) -> void:
+	var mat: Material = mesh.get_active_material(0)
+	if mat == null:
+		return
+	var copy: StandardMaterial3D = mat.duplicate() as StandardMaterial3D
+	if copy == null:
+		return
+	mesh.material_override = copy
+	_materials.append(copy)
+	_base_colors.append(copy.albedo_color)
 
 
 func _find_player() -> void:

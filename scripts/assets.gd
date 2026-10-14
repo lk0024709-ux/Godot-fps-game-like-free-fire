@@ -76,15 +76,15 @@ static func _cylinder(parent: Node3D, radius: float, height: float, mat: Materia
 	return node
 
 
-## Cone (shanka) mesh -> flash hider / choke ke liye
-## Dhyaan do: cone ka mota hissa (bottom) peeche rehta hai aur nok (top) aage
-## (-Z) ki taraf, isliye rotation X pe -90 degree hota hai.
+## Cone (shanka) mesh -> flash hider / choke ke liye.
+## NOTE: Godot 4 me koi "ConeMesh" class nahi hai! Cone CylinderMesh se banta hai
+## jiska ek radius 0 ho (top_radius = 0). Mota hissa peeche, nok aage (-Z).
 static func _cone(parent: Node3D, radius: float, height: float, mat: Material, pos: Vector3,
 		rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
-	var mesh := ConeMesh.new()
-	mesh.bottom_radius = radius
+	var mesh := CylinderMesh.new()
 	mesh.top_radius = 0.0
+	mesh.bottom_radius = radius
 	mesh.height = height
 	mesh.radial_segments = 10
 	mesh.rings = 1

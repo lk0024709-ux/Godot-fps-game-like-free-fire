@@ -147,7 +147,7 @@ func _build_weapon_grid() -> void:
 	for i in list.size():
 		var weapon: Dictionary = list[i]
 		var button := Button.new()
-		var tag := DATA.short_tag(String(weapon.get("shape", "rifle")))
+		var tag: String = DATA.short_tag(String(weapon.get("shape", "rifle")))
 		button.text = "[%s] %s" % [tag, String(weapon.get("name", "?"))]
 		button.focus_mode = Control.FOCUS_NONE
 		button.custom_minimum_size = Vector2(210, 42)
