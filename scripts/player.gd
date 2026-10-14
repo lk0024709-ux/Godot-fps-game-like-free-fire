@@ -1,15 +1,22 @@
 extends CharacterBody3D
 ##
-## Player (FPS)
-## PC   : WASD chalne ke liye, mouse se dekhna, left-click se firing, Space = jump
-## Mobile: left joystick chalne ke liye, right half pe swipe se dekhna,
-##         FIRE / JUMP buttons HUD se aate hain.
+## Player (FPS) + weapon holder
+## PC   : WASD chalna, mouse se dekhna, left-click firing, Space jump
+##        Q = pichhla gun, E = agla gun, R = reload, 1-9 = seedha gun select,
+##        mouse wheel se bhi gun badal sakte ho
+## Mobile: left joystick chalna, right half pe swipe se dekhna,
+##        FIRE / JUMP / RELOAD / SWAP / GUNS buttons HUD se aate hain
+##
+## Firing ka poora hisaab weapon_manager.gd ke paas hai (ammo, reload, damage,
+## auto/semi, pellets). Player sirf trigger dabaya gaya hai ya nahi wo dekhta hai
+## aur bullet spawn karta hai.
 ##
 
 signal health_changed(health: int)
 signal died
 
 const BULLET_SCENE := preload("res://scenes/bullet.tscn")
+const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
 
 @export_group("Movement")
 @export var move_speed: float = 6.0           ## m/s
@@ -23,15 +30,14 @@ const BULLET_SCENE := preload("res://scenes/bullet.tscn")
 
 @export_group("Combat")
 @export var max_health: int = 100             ## spec: start 100 HP
-@export var fire_cooldown: float = 0.14       ## auto-fire ka gap
-@export var bullet_speed: float = 55.0
-@export var bullet_damage: float = 10.0
-@export var gun_kick: float = 0.06            ## gun ka chhota recoil
+@export var gun_kick: float = 0.05            ## firing pe gun ka chhota kickback
+@export var muzzle_flash_time: float = 0.05
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
-@onready var gun: Node3D = $Head/Camera3D/Gun
+@onready var weapon_holder: Node3D = $Head/Camera3D/WeaponHolder
 
+var weapon_manager: Node = null               ## weapon_manager.gd (neeche banta hai)
 var health: int = 100
 var is_dead: bool = false
 var is_firing: bool = false
@@ -43,8 +49,10 @@ var bullet_parent = null
 var _pitch: float = 0.0
 var _recoil: float = 0.0
 var _kick: float = 0.0
-var _gun_base_pos: Vector3 = Vector3.ZERO
+var _holder_base: Vector3 = Vector3.ZERO
 var _fire_timer: float = 0.0
+var _trigger_ready: bool = true                ## semi-auto: naya press chahiye
+var _flash_timer: float = 0.0
 var _jump_requested: bool = false
 var _look_touch: int = -1
 var _is_mobile: bool = false
@@ -52,13 +60,54 @@ var _is_mobile: bool = false
 
 func _ready() -> void:
 	add_to_group("player")
+	_setup_input()
 	health = max_health
 	_is_mobile = OS.has_feature("mobile")
-	_gun_base_pos = gun.position
+	_holder_base = weapon_holder.position
+
+	# WeaponManager banao aur usko apna holder de do
+	weapon_manager = WEAPON_MANAGER.new()
+	weapon_manager.name = "WeaponManager"
+	add_child(weapon_manager)
+	weapon_manager.set_holder(weapon_holder)
 
 	# PC pe mouse ko capture karo (ESC se free hota hai)
 	if not _is_mobile:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+# ------------------------------------------------------------- input setup ---
+
+## Q / E / R / 1-9 / mouse-wheel ko code se hi register karte hain, taaki tumhe
+## project.godot me lamba InputMap block copy karne ki zaroorat na pade.
+## (Dhyaan do: pehle action banao, phir event add karo — warna event chhoot jayega.)
+func _setup_input() -> void:
+	_add_key("prev_weapon", KEY_Q)
+	_add_key("next_weapon", KEY_E)
+	_add_key("reload", KEY_R)
+	_add_key("weapon_menu", KEY_G)
+	_add_mouse("prev_weapon", MOUSE_BUTTON_WHEEL_UP)
+	_add_mouse("next_weapon", MOUSE_BUTTON_WHEEL_DOWN)
+	for i in 9:
+		_add_key("weapon_slot_%d" % (i + 1), KEY_1 + i)
+
+
+func _add_key(action: StringName, keycode: Key) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	var ev := InputEventKey.new()
+	ev.physical_keycode = keycode
+	if not InputMap.action_has_event(action, ev):
+		InputMap.action_add_event(action, ev)
+
+
+func _add_mouse(action: StringName, button: MouseButton) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	var ev := InputEventMouseButton.new()
+	ev.button_index = button
+	if not InputMap.action_has_event(action, ev):
+		InputMap.action_add_event(action, ev)
 
 
 # ------------------------------------------------------------------ input ----
@@ -66,7 +115,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# ---------- PC: mouse se dekhna ----------
 	if event is InputEventMouseMotion and not _is_mobile:
-		if not is_dead:
+		if not is_dead and not _menu_open():
 			_rotate_view(event.relative * mouse_sensitivity)
 		return
 
@@ -74,12 +123,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var half_width: float = get_viewport().get_visible_rect().size.x * 0.5
 		if event.pressed:
-			if not is_dead and _look_touch == -1 and event.position.x > half_width:
+			if not is_dead and not _menu_open() and _look_touch == -1 and event.position.x > half_width:
 				_look_touch = event.index
 		elif event.index == _look_touch:
 			_look_touch = -1
 	elif event is InputEventScreenDrag:
-		if not is_dead and event.index == _look_touch:
+		if not is_dead and not _menu_open() and event.index == _look_touch:
 			_rotate_view(event.relative * touch_sensitivity)
 
 	# ---------- PC: ESC = mouse free, click = wapas capture ----------
@@ -88,6 +137,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and not _is_mobile:
 		if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+			# mouse wapas capture hua to gun-picker band kar do (warna click kaam nahi karega)
+			if hud != null and hud.has_method("close_weapon_menu"):
+				hud.close_weapon_menu()
+
+
+## Gun-picker khula hai? Tab firing/look band rehta hai
+func _menu_open() -> bool:
+	return hud != null and hud.has_method("is_menu_open") and hud.is_menu_open()
 
 
 func _rotate_view(delta_vec: Vector2) -> void:
@@ -109,15 +166,8 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# ---- firing (gun dabaya rahe to lagatar chalti hai) ----
-	var wants_fire: bool = is_firing
-	if not _is_mobile and Input.is_action_pressed("fire"):
-		wants_fire = true
-	if wants_fire:
-		_fire_timer -= delta
-		if _fire_timer <= 0.0:
-			_fire_timer = fire_cooldown
-			shoot()
+	_handle_weapon_input()
+	_handle_firing(delta)
 
 	# ---- movement input (keyboard + joystick) ----
 	var input_dir := Vector2.ZERO
@@ -154,44 +204,129 @@ func _apply_look(delta: float) -> void:
 	var limit := deg_to_rad(pitch_limit_deg)
 	head.rotation = Vector3(clampf(_pitch + _recoil, -limit, limit), 0.0, 0.0)
 
+	# gun ka kickback (peeche + thoda upar + muzzle upar uthta hai)
 	_kick = move_toward(_kick, 0.0, delta * 6.0)
-	gun.position = _gun_base_pos + Vector3(0.0, 0.0, gun_kick * _kick)
+	weapon_holder.position = _holder_base + Vector3(0.0, 0.012 * _kick, gun_kick * _kick)
+	weapon_holder.rotation = Vector3(deg_to_rad(-4.0 * _kick), 0.0, 0.0)
+
+	# muzzle flash on/off
+	if _flash_timer > 0.0:
+		_flash_timer -= delta
+	if weapon_manager != null and is_instance_valid(weapon_manager) and weapon_manager.muzzle != null:
+		weapon_manager.muzzle.visible = _flash_timer > 0.0
 
 
-# ---------------------------------------------------------------- shooting --
+# -------------------------------------------------------------- weapon keys --
+
+func _handle_weapon_input() -> void:
+	if weapon_manager == null or not is_instance_valid(weapon_manager):
+		return
+	if Input.is_action_just_pressed("next_weapon"):
+		weapon_manager.next_weapon()
+	if Input.is_action_just_pressed("prev_weapon"):
+		weapon_manager.prev_weapon()
+	if Input.is_action_just_pressed("reload"):
+		weapon_manager.start_reload()
+	if Input.is_action_just_pressed("weapon_menu") and hud != null and hud.has_method("toggle_weapon_menu"):
+		hud.toggle_weapon_menu()
+	for i in 9:                                  # 1-9 = seedha weapon select
+		if Input.is_action_just_pressed("weapon_slot_%d" % (i + 1)):
+			weapon_manager.switch_weapon(i)
+
+
+# ---------------------------------------------------------------- shooting ---
+
+func _handle_firing(delta: float) -> void:
+	if weapon_manager == null or not is_instance_valid(weapon_manager):
+		return
+
+	if _menu_open():
+		is_firing = false
+		_trigger_ready = true
+		return
+
+	# PC: left click / Enter. Mobile: FIRE button (start_firing/stop_firing)
+	var wants_fire: bool = is_firing
+	if not _is_mobile:
+		if Input.is_action_just_pressed("fire"):
+			_trigger_ready = true
+		if Input.is_action_pressed("fire"):
+			wants_fire = true
+
+	if not wants_fire:
+		if not weapon_manager.is_auto():
+			_fire_timer = 0.0        # semi-auto: naya press turant chalega
+		return
+
+	# auto weapon: dabaye rakhne pe lagatar. semi: har press pe ek goli.
+	if not weapon_manager.is_auto() and not _trigger_ready:
+		return
+
+	_fire_timer -= delta
+	if _fire_timer <= 0.0:
+		shoot()
+
 
 func shoot() -> void:
 	if is_dead or bullet_parent == null or not is_instance_valid(bullet_parent):
 		return
+	if weapon_manager == null or not is_instance_valid(weapon_manager):
+		return
 
-	var dir: Vector3 = -camera.global_transform.basis.z.normalized()
-	# chhota sa spread, taaki firing natural lage
-	var spread := deg_to_rad(1.0)
-	dir = dir.rotated(Vector3.UP, randf_range(-spread, spread))
-	dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
-	dir = dir.normalized()
+	if not weapon_manager.can_shoot():
+		if not weapon_manager.reloading:
+			weapon_manager.start_reload()     # magazine khali -> auto reload
+		return
+
+	var weapon: Dictionary = weapon_manager.get_current()
+	var pellets: int = maxi(1, int(weapon.get("pellets", 1)))
+	var damage: float = float(weapon.get("damage", 10.0))
+	var speed: float = float(weapon.get("bullet_speed", 26.0))
+	var spread: float = float(weapon.get("spread", 0.6))
+
+	# Camera se aage ki direction
+	var aim: Vector3 = -camera.global_transform.basis.z.normalized()
+	for i in pellets:
+		_spawn_bullet(aim, spread, damage, speed)   # shotgun -> ek saath kai goliyaan
+
+	weapon_manager.consume_ammo()
+	_fire_timer = weapon_manager.get_fire_delay()
+	_trigger_ready = false
+
+	# recoil (weapon ke hisaab se) + muzzle flash + halki vibration
+	var recoil_deg: float = float(weapon.get("recoil", 1.0))
+	_recoil += deg_to_rad(recoil_deg)
+	_kick = minf(1.5, recoil_deg)
+	_flash_timer = muzzle_flash_time
+	Input.vibrate_handheld(25)
+
+
+func _spawn_bullet(aim: Vector3, spread_deg: float, damage: float, speed: float) -> void:
+	var dir := aim
+	if spread_deg > 0.0:
+		var spread := deg_to_rad(spread_deg)
+		dir = dir.rotated(Vector3.UP, randf_range(-spread, spread))
+		dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
+		dir = dir.normalized()
 
 	var bullet = BULLET_SCENE.instantiate()
 	bullet.direction = dir
-	bullet.speed = bullet_speed
-	bullet.damage = bullet_damage
+	bullet.speed = speed
+	bullet.damage = damage
 	bullet.shooter = self
 	bullet_parent.add_child(bullet)
 	bullet.global_position = camera.global_position + dir * 0.9
 	bullet.face_direction()
 
-	_recoil += deg_to_rad(0.7)
-	_kick = 1.0
-	Input.vibrate_handheld(30)   # mobile pe halki vibration
-
 
 # ---------------------------------------------------- HUD se aane wale calls -
 
 func start_firing() -> void:
-	if is_dead:
+	if is_dead or _menu_open():
 		return
 	is_firing = true
-	_fire_timer = 0.0     # pehli goli turant
+	_trigger_ready = true      # pehli goli turant (semi-auto ke liye zaroori)
+	_fire_timer = 0.0
 
 
 func stop_firing() -> void:
@@ -223,6 +358,8 @@ func die() -> void:
 	is_dead = true
 	is_firing = false
 	velocity = Vector3.ZERO
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		weapon_manager.cancel_reload()
 	if not _is_mobile:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)   # restart button click ho sake
 	died.emit()

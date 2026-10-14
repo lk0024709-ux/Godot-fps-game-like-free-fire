@@ -62,6 +62,9 @@ func _ready() -> void:
 	player.hud = hud
 	player.bullet_parent = bullet_container
 
+	# weapon system ka display (gun ka naam + ammo + gun-picker) HUD pe
+	hud.bind_weapon_manager(player.weapon_manager)
+
 	# HUD -> player / main
 	hud.fire_pressed.connect(player.start_firing)
 	hud.fire_released.connect(player.stop_firing)

@@ -1,31 +1,10 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.4
 height = 1.8
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gun"]
-albedo_color = Color(0.16, 0.17, 0.2, 1)
-metallic = 0.6
-roughness = 0.4
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_grip"]
-albedo_color = Color(0.55, 0.35, 0.15, 1)
-roughness = 0.9
-
-[sub_resource type="BoxMesh" id="BoxMesh_gun_body"]
-material = SubResource("StandardMaterial3D_gun")
-size = Vector3(0.14, 0.16, 0.55)
-
-[sub_resource type="BoxMesh" id="BoxMesh_gun_barrel"]
-material = SubResource("StandardMaterial3D_gun")
-size = Vector3(0.07, 0.07, 0.32)
-
-[sub_resource type="BoxMesh" id="BoxMesh_gun_grip"]
-material = SubResource("StandardMaterial3D_grip")
-size = Vector3(0.11, 0.22, 0.12)
 
 [node name="Player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
@@ -45,19 +24,5 @@ fov = 75.0
 near = 0.05
 far = 300.0
 
-[node name="Gun" type="Node3D" parent="Head/Camera3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, -0.2, -0.45)
-
-[node name="GunBody" type="MeshInstance3D" parent="Head/Camera3D/Gun"]
-cast_shadow = 0
-mesh = SubResource("BoxMesh_gun_body")
-
-[node name="GunBarrel" type="MeshInstance3D" parent="Head/Camera3D/Gun"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.4)
-cast_shadow = 0
-mesh = SubResource("BoxMesh_gun_barrel")
-
-[node name="GunGrip" type="MeshInstance3D" parent="Head/Camera3D/Gun"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.17, 0.17)
-cast_shadow = 0
-mesh = SubResource("BoxMesh_gun_grip")
+[node name="WeaponHolder" type="Node3D" parent="Head/Camera3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, -0.2, -0.5)

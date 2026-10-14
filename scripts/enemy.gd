@@ -2,14 +2,16 @@ extends CharacterBody3D
 ##
 ## Enemy (dushman)
 ## Player ki taraf chalta hai, paas aakar thoda-thoda damage deta hai.
-## 20 HP hai -> 2 goli (10 damage each) me marta hai. Marne pe main.gd +10 score
-## deta hai (signal "died" ke through).
+## 100 HP hai (weapon system aane ke baad har gun ka damage alag hai — pistol
+## 30 se lekar M82B ke 120 tak — isliye HP badhaya, warna sab ek hi goli me marte).
+## 20 HP wapas chahiye to neeche max_health = 20.0 kar do.
+## Marne pe main.gd +10 score deta hai (signal "died" ke through).
 ##
 
 signal died(enemy: Node3D)
 
 @export_group("Stats")
-@export var max_health: float = 20.0
+@export var max_health: float = 100.0
 @export var move_speed: float = 2.6
 @export var gravity: float = 18.0
 
@@ -23,7 +25,7 @@ signal died(enemy: Node3D)
 @onready var head_mesh: MeshInstance3D = $Head
 @onready var wall_check: RayCast3D = $WallCheck
 
-var health: float = 20.0
+var health: float = 100.0
 var is_dead: bool = false
 
 var _player = null                     ## dynamic (player.gd wala node)

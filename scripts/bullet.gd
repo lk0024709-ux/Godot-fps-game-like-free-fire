@@ -1,21 +1,25 @@
 extends Node3D
 ##
-## Bullet (goli)
+## Bullet (goli) — damage system
 ## Shooter se spawn hoti hai, apni "direction" me seedha aage badhti hai.
 ## Raaste me jo pehli cheez (enemy / deewar / zameen) mile usse damage deti hai
-## aur khud delete ho jaati hai. 2 second tak kuch na lage to bhi delete.
+## aur khud delete ho jaati hai. max_life second tak kuch na lage to bhi delete.
 ##
 ## Har physics frame pe ray-cast hota hai (pichli jagah se nayi jagah tak),
-## isliye tez goli bhi deewar ke aar-paar nahi nikalti (no tunnelling).
+## isliye tez goli bhi deewar/enemy ke aar-paar nahi nikalti (no tunnelling).
+## (Area3D + body_entered wale tarike me tez goli chhoot jati hai, isliye
+##  ye ray-sweep tarika zyada bharosemand hai — baaki API wahi hai: damage,
+##  die() / take_damage().)
+##
 
-@export var speed: float = 55.0        ## metres per second
-@export var damage: float = 10.0       ## kitna HP katega
-@export var max_life: float = 2.0      ## spec: 2 second baad gayab
+@export var speed: float = 26.0        ## metres per second (weapon apni speed deta hai)
+@export var damage: float = 10.0       ## kitna HP katega (weapon se aata hai)
+@export var max_life: float = 2.5      ## itne second baad gayab
 
 var direction: Vector3 = Vector3.FORWARD   ## player.gd set karta hai
 var shooter = null                         ## jisne goli chalayi (khud ko na maare)
 
-var _life: float = 2.0
+var _life: float = 2.5
 
 
 func _ready() -> void:
@@ -59,8 +63,16 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 
+## Kuch lag gaya -> damage do.
+## Enemy ke paas take_damage() hai (HP kam karta hai, marne pe die() khud call hota
+## hai). Kisi aur cheez ke paas sirf die() ho to wahi call kar dete hain.
+## Player ko jaan-boojh kar chhod dete hain (friendly fire off) — warna goli
+## player ke die() ko call karke khud hi maar deti.
 func _apply_hit(collider) -> void:
-	if collider is Node and collider.is_in_group("enemy") and collider.has_method("take_damage"):
-		collider.take_damage(damage)
-	# zameen / deewar / player -> bas gayab ho jao (friendly fire off)
+	if collider is Node and not collider.is_in_group("player"):
+		if collider.has_method("take_damage"):
+			collider.take_damage(damage)
+		elif collider.has_method("die"):
+			collider.die()
+	# zameen / deewar / player -> bas gayab ho jao
 	queue_free()
