@@ -35,3 +35,6 @@ mono_crash.*.json
 # OS junk
 .DS_Store
 Thumbs.db
+
+# CI build log (workflow ikattha karta hai)
+build-log.txt

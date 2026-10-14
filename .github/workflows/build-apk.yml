@@ -19,7 +19,7 @@ jobs:
 
     env:
       # Build log (fail hone pe error report me kaam aata hai)
-      DIAG: ${{ runner.temp }}/build-log.txt
+      DIAG: ${{ github.workspace }}/build-log.txt
       # Optional: apna pakka keystore GitHub Secrets me daal sakte ho
       # ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_ALIAS / ANDROID_KEYSTORE_PASSWORD
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
