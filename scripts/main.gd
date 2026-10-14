@@ -16,7 +16,11 @@ const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 @export var min_spawn_distance: float = 9.0      ## player se itni door spawn
 
 @export_group("Arena")
-@export var arena_size: float = 40.0             ## 40 x 40 ka maidan
+@export var arena_size: float = 40.0             ## maidan kitna bada (40 = 40x40m, 20 = 20x20m)
+
+## Neeche wala layout isi 40x40 ke hisaab se likha hai. arena_size badloge to
+## sab kuch (deewarein + cover boxes + spawn ghere) automatically scale ho jayega.
+const ARENA_REFERENCE: float = 40.0
 
 @onready var player = $Player
 @onready var hud = $HUD
@@ -102,8 +106,10 @@ func _build_arena() -> void:
 	add_child(ground)
 
 	# ---- cover boxes / deewarein ----
+	# layout 40x40 ke hisaab se likha hai, isliye chhote/bade maidan ke liye scale
+	var scale_factor: float = arena_size / ARENA_REFERENCE
 	for item in _obstacles:
-		_add_box(item[0], item[1], item[2])
+		_add_box((item[0] as Vector3) * scale_factor, (item[1] as Vector3) * scale_factor, item[2])
 
 
 func _add_box(box_pos: Vector3, box_size: Vector3, color: Color) -> void:
@@ -180,9 +186,11 @@ func _pick_spawn_position() -> Vector3:
 	var points := _spawn_points()
 	points.shuffle()
 	var player_pos: Vector3 = player.global_position
+	# chhote maidan me spawn points player ke paas aa jate hain, isliye safe distance
+	var safe_distance: float = minf(min_spawn_distance, arena_size * 0.35)
 	for p in points:
 		var flat_distance: float = Vector2(p.x - player_pos.x, p.z - player_pos.z).length()
-		if flat_distance > min_spawn_distance:
+		if flat_distance > safe_distance:
 			return p
 	return points[0]
 
