@@ -1,13 +1,16 @@
 name: Build Android APK
 
-# Jab bhi kuch push ho (ya manually "Run workflow" dabao) → naya APK ban jayega.
+# Har push pe naya APK. Manually: Actions tab -> "Build Android APK" -> Run workflow.
 on:
   push:
   workflow_dispatch:
 
-# APK ko "latest-apk" release me daalne ke liye likhne ki permission
 permissions:
   contents: write
+
+env:
+  GODOT_VERSION: "4.2.2"
+  GODOT_CHANNEL: "stable"
 
 jobs:
   build-apk:
@@ -15,41 +18,45 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Optional: chaaho to apna pakka keystore GitHub Secrets me daal sakte ho
-      # (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_ALIAS, ANDROID_KEYSTORE_PASSWORD)
+      # Build log (fail hone pe error report me kaam aata hai)
+      DIAG: ${{ runner.temp }}/build-log.txt
+      # Optional: apna pakka keystore GitHub Secrets me daal sakte ho
+      # ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_ALIAS / ANDROID_KEYSTORE_PASSWORD
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
       KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
     steps:
-      - name: 1) Code checkout
+      - name: "1) Code checkout"
         uses: actions/checkout@v4
 
-      - name: 2) Java 17 (keytool + Android signing ke liye)
+      - name: "2) Java 17 (keytool + Android signing)"
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: 3) Android SDK + build-tools (apksigner / zipalign)
+      - name: "3) Android SDK + build-tools (apksigner / zipalign)"
         uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools build-tools;34.0.0"
 
-      # Godot ko release keystore ke bina export nahi karta, isliye pehle keystore banate hain.
-      # Env var ke naam Godot 4.2 me fix hain: GODOT_ANDROID_KEYSTORE_RELEASE_PATH/_USER/_PASSWORD
-      - name: 4) Keystore taiyar karo
+      # Godot release keystore ke bina export nahi karta, isliye pehle keystore banate hain.
+      # Env var ke naam Godot 4.2 me fixed hain:
+      # GODOT_ANDROID_KEYSTORE_RELEASE_PATH / _USER / _PASSWORD
+      - name: "4) Keystore banao (ya secret se lo)"
         run: |
           set -euo pipefail
+          touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
 
           if [ -n "${KEYSTORE_B64:-}" ]; then
-            echo "Secret wala keystore use ho raha hai"
+            echo "::notice::Secret wala keystore use ho raha hai" | tee -a "$DIAG"
             printf '%s' "$KEYSTORE_B64" | base64 -d > release.keystore
             ALIAS="$KEYSTORE_ALIAS"
             PASS="$KEYSTORE_PASSWORD"
           else
-            echo "Koi secret nahi mila -> test keystore bana rahe hain"
+            echo "::notice::Koi secret nahi mila -> test keystore bana rahe hain" | tee -a "$DIAG"
             keytool -genkeypair -keystore release.keystore -storetype JKS \
               -storepass fpsgame123 -keypass fpsgame123 -alias fpskey \
               -keyalg RSA -keysize 2048 -validity 10000 \
@@ -65,22 +72,99 @@ jobs:
             echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$GITHUB_WORKSPACE/release.keystore"
             echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=$ALIAS"
             echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=$PASS"
+            echo "USED_KEYSTORE_ALIAS=$ALIAS"
+            echo "USED_KEYSTORE_PASS=$PASS"
           } >> "$GITHUB_ENV"
 
           mkdir -p build
-          ls -lh release.keystore
+          ls -lh release.keystore | tee -a "$DIAG"
 
-      # Godot download + export templates + Android SDK settings + export sab ye action karta hai
-      - name: 5) Godot export -> APK
-        uses: dulvui/godot-android-export@v4
-        with:
-          godot-version: 4.2.2
-          godot-channel: stable
-          working-directory: .
-
-      - name: 6) APK ko ek naam se ikattha karo
+      - name: "5) Godot 4.2.2 + export templates download"
         run: |
           set -euo pipefail
+          touch "$DIAG"
+          cd "$RUNNER_TEMP"
+          BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_CHANNEL}"
+          curl -sSL --retry 3 --retry-delay 5 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-${GODOT_CHANNEL}_linux.x86_64.zip"
+          curl -sSL --retry 3 --retry-delay 5 -o templates.tpz "${BASE}/Godot_v${GODOT_VERSION}-${GODOT_CHANNEL}_export_templates.tpz"
+          ls -lh godot.zip templates.tpz | tee -a "$DIAG"
+
+      - name: "6) Godot install + editor settings (SDK/JDK paths)"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          cd "$RUNNER_TEMP"
+
+          # Godot binary -> ~/bin (sudo ki zaroorat nahi)
+          mkdir -p "$HOME/bin"
+          unzip -q -o godot.zip
+          mv "Godot_v${GODOT_VERSION}-${GODOT_CHANNEL}_linux.x86_64" "$HOME/bin/godot"
+          chmod +x "$HOME/bin/godot"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+          # export templates -> ~/.local/share/godot/export_templates/4.2.2.stable/
+          unzip -q -o templates.tpz
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_CHANNEL}"
+          mkdir -p "$TEMPLATE_DIR"
+          mv templates/* "$TEMPLATE_DIR/"
+
+          SDK_PATH="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          JDK_PATH="${JAVA_HOME:-}"
+          BUILD_TOOLS_DIR="$(ls -d "$SDK_PATH"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)"
+
+          {
+            echo "TEMPLATE_DIR: $TEMPLATE_DIR"
+            echo "SDK:          $SDK_PATH"
+            echo "JDK:          $JDK_PATH"
+            echo "build-tools:  $BUILD_TOOLS_DIR"
+            echo "templates:    $(ls "$TEMPLATE_DIR" | tr '\n' ' ')"
+          } | tee -a "$DIAG"
+
+          test -f "$TEMPLATE_DIR/android_release.apk" || { echo "::error::android_release.apk template nahi mila"; exit 1; }
+          test -x "${BUILD_TOOLS_DIR}apksigner" || { echo "::error::apksigner nahi mila ($SDK_PATH/build-tools)"; exit 1; }
+          test -n "$JDK_PATH" || { echo "::error::JAVA_HOME khali hai"; exit 1; }
+
+          # Editor settings: Godot ko Android SDK / JDK / debug keystore batao
+          mkdir -p "$HOME/.config/godot"
+          printf '%s\n' \
+            '[gd_resource type="EditorSettings" format=3]' \
+            '' \
+            '[resource]' \
+            "export/android/android_sdk_path = \"$SDK_PATH\"" \
+            "export/android/java_sdk_path = \"$JDK_PATH\"" \
+            "export/android/debug_keystore = \"$GITHUB_WORKSPACE/release.keystore\"" \
+            "export/android/debug_keystore_user = \"$USED_KEYSTORE_ALIAS\"" \
+            "export/android/debug_keystore_pass = \"$USED_KEYSTORE_PASS\"" \
+            "export/android/shutdown_adb_on_exit = true" \
+            > "$HOME/.config/godot/editor_settings-4.tres"
+          cat "$HOME/.config/godot/editor_settings-4.tres" | tee -a "$DIAG"
+
+      - name: "7) Godot version check"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          godot --version 2>&1 | tee -a "$DIAG"
+
+      - name: "8) Project import (headless)"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          godot --headless --path "$GITHUB_WORKSPACE" --import 2>&1 | tee -a "$DIAG"
+          ls -la "$GITHUB_WORKSPACE/.godot" | tee -a "$DIAG"
+
+      - name: "9) APK export (release)"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p build
+          godot --headless --path . --export-release Android 2>&1 | tee -a "$DIAG"
+          ls -lh build/ | tee -a "$DIAG" || true
+
+      - name: "10) APK ka naam pakka karo"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
           APK=""
           if [ -f "$GITHUB_WORKSPACE/build/FreeFireFPS.apk" ]; then
             APK="$GITHUB_WORKSPACE/build/FreeFireFPS.apk"
@@ -88,25 +172,44 @@ jobs:
             APK=$(find "$GITHUB_WORKSPACE" -name '*.apk' -not -path '*/android/*' -not -path '*/.git/*' | head -n 1 || true)
           fi
           if [ -z "$APK" ]; then
-            echo "::error::APK nahi bana — upar wale step ka log dekho"
+            echo "::error::APK nahi bana — step 9 ka output dekho"
             exit 1
           fi
           cp "$APK" "$GITHUB_WORKSPACE/FreeFireFPS.apk"
-          ls -lh "$GITHUB_WORKSPACE/FreeFireFPS.apk"
+          ls -lh "$GITHUB_WORKSPACE/FreeFireFPS.apk" | tee -a "$DIAG"
 
-      - name: 7) APK upload (workflow page se download karne ke liye)
+      - name: "11) APK upload (workflow page se download)"
         uses: actions/upload-artifact@v4
         with:
           name: FreeFireFPS-apk
           path: FreeFireFPS.apk
           if-no-files-found: error
 
-      # Phone pe install karna aasan ho: Releases me ek pakka link ban jata hai
-      - name: 8) Release me daalo (phone pe direct download link)
+      # Phone pe install karna aasan: "latest-apk" release me pakka download link
+      - name: "12) Release me daalo (phone pe direct download)"
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view latest-apk >/dev/null 2>&1 || \
-            gh release create latest-apk --title "Latest APK" --notes "Automatically built APK. Phone me ye file download karke install karo (Settings me 'unknown sources' allow karna padega)."
+            gh release create latest-apk --title "Latest APK" --notes "Automatically built APK. Phone me ye file download karke install karo (Settings me 'install unknown apps' allow karna padega)."
           gh release upload latest-apk FreeFireFPS.apk --clobber
+
+      # Agar kuch fail ho jaye to error commit-comment me likh do,
+      # taaki direct yahin se padha ja sake.
+      - name: "13) Fail hone pe error report"
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          touch "$DIAG"
+          {
+            echo "## Build fail: $(date -u)"
+            echo ""
+            echo '```'
+            tail -c 5000 "$DIAG" 2>/dev/null || echo "(log khali hai)"
+            echo '```'
+            echo ""
+            echo "Steps: $(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --jq '.jobs[0].steps[] | "\(.name)=\(.conclusion)"' 2>/dev/null | tr '\n' ' ')"
+          } > "$RUNNER_TEMP/report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@"$RUNNER_TEMP/report.md" || echo "comment post nahi hua"
