@@ -13,7 +13,9 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
 2. Repo me **Actions** tab kholo.
 3. `Build Android APK` workflow apne aap chalu ho jayega (har push pe chalta hai).
    Manually chalane ke liye: **Actions → Build Android APK → Run workflow**.
-4. ~4-6 minute wait. Green tick aa gaya to APK ready hai.
+   Workflow sab kuch khud karta hai — Godot 4.2.2 download, export templates install,
+   keystore, APK export, upload. Kisi third-party action pe depend nahi karta.
+4. ~2-4 minute wait. Green tick aa gaya to APK ready hai.
 5. APK lene ke 2 tarike:
    - **Releases page** (sabse aasan, phone ke browser me bhi khulta hai):
      `Releases → Latest APK → FreeFireFPS.apk` — seedha download.
@@ -111,6 +113,7 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 | Game khulta hai par touch kaam nahi karta | Confirm karo ki build **Android** ke liye hua (PC/other platform ke liye nahi) aur `hud.tscn` me `TouchControls` node hai |
 | Game crash / black screen | Android me `adb logcat` chalao ya phone pe crash dialog ka text bhej do |
 | PC pe test karna hai | PC pe **Godot 4.2.2** install karo (free, ~100 MB) → `project.godot` import karo → `F5` dabao |
+| Build fail hua par log nahi dikh raha | Fail hue commit ke neeche ek **comment** post hota hai (workflow ka aakhri step) — usme poora build log hai. Ya Actions run page pe failed step kholo |
 | Performance kam hai | `project.godot` me `renderer/rendering_method="gl_compatibility"` kar do, aur `scripts/main.gd` me `max_enemies` 8 → 4 |
 
 ---
