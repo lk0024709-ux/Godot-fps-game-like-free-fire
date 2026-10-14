@@ -152,6 +152,29 @@ jobs:
           godot --headless --path "$GITHUB_WORKSPACE" --import 2>&1 | tee -a "$DIAG"
           ls -la "$GITHUB_WORKSPACE/.godot" | tee -a "$DIAG"
 
+      - name: "8b) GDScript syntax check (har script ka parse gate)"
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          bad=0
+          for f in scripts/*.gd; do
+            out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1)
+            code=$?
+            if [ $code -ne 0 ] || echo "$out" | grep -qiE "parse error|script error|failed to load"; then
+              bad=$((bad + 1))
+              echo "--- $f ---" | tee -a "$DIAG"
+              echo "$out" | tee -a "$DIAG"
+            else
+              echo "OK   $f"
+            fi
+          done
+          if [ $bad -gt 0 ]; then
+            echo "::error::$bad script(s) me syntax error hai — upar wala output dekho (aur fail hone pe commit comment me bhi aayega)"
+            exit 1
+          fi
+          echo "Saare scripts sahi parse hue ✔" | tee -a "$DIAG"
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail
@@ -213,3 +236,11 @@ jobs:
             echo "Steps: $(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --jq '.jobs[0].steps[] | "\(.name)=\(.conclusion)"' 2>/dev/null | tr '\n' ' ')"
           } > "$RUNNER_TEMP/report.md"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@"$RUNNER_TEMP/report.md" || echo "comment post nahi hua"
+      - name: "14) Build log upload (diagnostics)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-log.txt
+          if-no-files-found: ignore
+          retention-days: 14
