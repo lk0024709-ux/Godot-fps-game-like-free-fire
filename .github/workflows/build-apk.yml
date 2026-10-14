@@ -1,0 +1,112 @@
+name: Build Android APK
+
+# Jab bhi kuch push ho (ya manually "Run workflow" dabao) → naya APK ban jayega.
+on:
+  push:
+  workflow_dispatch:
+
+# APK ko "latest-apk" release me daalne ke liye likhne ki permission
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Godot 4.2.2 se Android APK
+    runs-on: ubuntu-latest
+
+    env:
+      # Optional: chaaho to apna pakka keystore GitHub Secrets me daal sakte ho
+      # (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_ALIAS, ANDROID_KEYSTORE_PASSWORD)
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+
+    steps:
+      - name: 1) Code checkout
+        uses: actions/checkout@v4
+
+      - name: 2) Java 17 (keytool + Android signing ke liye)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 3) Android SDK + build-tools (apksigner / zipalign)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools build-tools;34.0.0"
+
+      # Godot ko release keystore ke bina export nahi karta, isliye pehle keystore banate hain.
+      # Env var ke naam Godot 4.2 me fix hain: GODOT_ANDROID_KEYSTORE_RELEASE_PATH/_USER/_PASSWORD
+      - name: 4) Keystore taiyar karo
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "Secret wala keystore use ho raha hai"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > release.keystore
+            ALIAS="$KEYSTORE_ALIAS"
+            PASS="$KEYSTORE_PASSWORD"
+          else
+            echo "Koi secret nahi mila -> test keystore bana rahe hain"
+            keytool -genkeypair -keystore release.keystore -storetype JKS \
+              -storepass fpsgame123 -keypass fpsgame123 -alias fpskey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Free Fire Style FPS, OU=Game, O=Indie, L=Bikaner, S=RJ, C=IN" > /dev/null
+            ALIAS="fpskey"
+            PASS="fpsgame123"
+          fi
+
+          {
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$GITHUB_WORKSPACE/release.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=$ALIAS"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$PASS"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$GITHUB_WORKSPACE/release.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=$ALIAS"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=$PASS"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p build
+          ls -lh release.keystore
+
+      # Godot download + export templates + Android SDK settings + export sab ye action karta hai
+      - name: 5) Godot export -> APK
+        uses: dulvui/godot-android-export@v4
+        with:
+          godot-version: 4.2.2
+          godot-channel: stable
+          working-directory: .
+
+      - name: 6) APK ko ek naam se ikattha karo
+        run: |
+          set -euo pipefail
+          APK=""
+          if [ -f "$GITHUB_WORKSPACE/build/FreeFireFPS.apk" ]; then
+            APK="$GITHUB_WORKSPACE/build/FreeFireFPS.apk"
+          else
+            APK=$(find "$GITHUB_WORKSPACE" -name '*.apk' -not -path '*/android/*' -not -path '*/.git/*' | head -n 1 || true)
+          fi
+          if [ -z "$APK" ]; then
+            echo "::error::APK nahi bana — upar wale step ka log dekho"
+            exit 1
+          fi
+          cp "$APK" "$GITHUB_WORKSPACE/FreeFireFPS.apk"
+          ls -lh "$GITHUB_WORKSPACE/FreeFireFPS.apk"
+
+      - name: 7) APK upload (workflow page se download karne ke liye)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeFireFPS-apk
+          path: FreeFireFPS.apk
+          if-no-files-found: error
+
+      # Phone pe install karna aasan ho: Releases me ek pakka link ban jata hai
+      - name: 8) Release me daalo (phone pe direct download link)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest-apk >/dev/null 2>&1 || \
+            gh release create latest-apk --title "Latest APK" --notes "Automatically built APK. Phone me ye file download karke install karo (Settings me 'unknown sources' allow karna padega)."
+          gh release upload latest-apk FreeFireFPS.apk --clobber
