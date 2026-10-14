@@ -175,6 +175,18 @@ jobs:
           fi
           echo "Saare scripts sahi parse hue ✔" | tee -a "$DIAG"
 
+      - name: "8c) Import log me error scan (broken scene/script)"
+        run: |
+          set -uo pipefail
+          if [ ! -f "$DIAG" ]; then echo "log nahi mila, skip"; exit 0; fi
+          matches=$(grep -nE "Parse Error|SCRIPT ERROR|Failed to load script|Failed to load resource|Invalid export preset" "$DIAG" || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Import/parse step me error mila — neeche dekho (aur commit comment me bhi aayega)"
+            echo "$matches"
+            exit 1
+          fi
+          echo "Import log saaf hai ✔ (koi parse/load error nahi)"
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail

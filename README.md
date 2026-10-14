@@ -151,6 +151,7 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 | Game khulta hai par touch kaam nahi karta | Confirm karo ki build **Android** ke liye hua (PC/other platform ke liye nahi) aur `hud.tscn` me `TouchControls` node hai |
 | Game crash / black screen | Android me `adb logcat` chalao ya phone pe crash dialog ka text bhej do |
 | PC pe test karna hai | PC pe **Godot 4.2.2** install karo (free, ~100 MB) → `project.godot` import karo → `F5` dabao |
+| Naya code copy-paste kiya, game crash ho raha hai | Actions khud check karta hai: step **8b) GDScript syntax check** aur **8c) Import log error scan** — syntax error hui to build wahi ruk jayega aur error ka line number commit comment me milega |
 | Build fail hua par log nahi dikh raha | Fail hue commit ke neeche ek **comment** post hota hai (workflow ka aakhri step) — usme poora build log hai. Ya Actions run page pe failed step kholo |
 | Performance kam hai | `project.godot` me `renderer/rendering_method="gl_compatibility"` kar do, aur `scripts/main.gd` me `max_enemies` 8 → 4 |
 
