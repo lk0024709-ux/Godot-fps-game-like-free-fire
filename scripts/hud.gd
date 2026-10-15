@@ -78,6 +78,10 @@ func _ready() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.gui_input.connect(_on_dim_gui_input)
 
+	# Gun-picker: grid khud saare touch/click leta hai, panel bahar wala tap
+	weapon_grid.gui_input.connect(_on_weapon_grid_gui_input)
+	weapon_panel.gui_input.connect(_on_weapon_panel_gui_input)
+
 	# 8 second baad hint hata do
 	var tween := create_tween()
 	tween.tween_interval(8.0)
@@ -173,7 +177,10 @@ func _build_weapon_grid() -> void:
 		button.add_theme_color_override("font_color", Color(1, 1, 1))
 		button.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 
-		button.pressed.connect(_on_weapon_button_pressed.bind(i))
+		# Buttons sirf dikhne ke liye hain (IGNORE) — saara input grid khud leta hai.
+		# Wajah: Godot ka Button sirf PEHLI ungli wala emulated mouse sunta hai, isliye
+		# joystick pakde hue doosri ungli se tap karne pe Button kuch nahi karta tha.
+		button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		weapon_grid.add_child(button)
 		_weapon_buttons.append(button)
 
@@ -220,6 +227,51 @@ func _on_weapon_button_pressed(index: int) -> void:
 	close_weapon_menu()
 
 
+## Gun-picker ka input: ungli/click jis button pe hai wahi weapon select hota hai.
+## Ye Control object khud saara input leta hai (buttons sirf visual hain), isliye
+## mobile pe joystick ek ungli se pakda ho aur doosri ungli se gun select karo —
+## wo bhi sahi kaam karta hai. (Godot ka normal Button multi-touch me kaam nahi
+## karta: wo sirf pehli ungli ke emulated mouse events sunta hai.)
+func _on_weapon_grid_gui_input(event: InputEvent) -> void:
+	var local := Vector2.ZERO
+	var pressed := false
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		pressed = touch.pressed
+		local = touch.position
+	elif event is InputEventMouseButton:
+		var click := event as InputEventMouseButton
+		if click.button_index != MOUSE_BUTTON_LEFT:
+			return
+		pressed = click.pressed
+		local = click.position
+	else:
+		return
+	if not pressed:
+		return
+
+	# event.position grid ke andar local hai -> canvas space me convert karke
+	# har button ke rect se compare karo
+	var point: Vector2 = weapon_grid.get_global_transform_with_canvas() * local
+	for i in _weapon_buttons.size():
+		var button: Button = _weapon_buttons[i]
+		var rect := Rect2(button.get_global_transform_with_canvas().origin, button.size)
+		if rect.has_point(point):
+			_on_weapon_button_pressed(i)
+			return
+
+
+## Grid ke bahar (panel pe) tap/click -> picker band
+func _on_weapon_panel_gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if (event as InputEventScreenTouch).pressed:
+			close_weapon_menu()
+	elif event is InputEventMouseButton:
+		var click := event as InputEventMouseButton
+		if click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
+			close_weapon_menu()
+
+
 # ============================================================ values dikhana ==
 
 func set_health(value: int) -> void:
@@ -259,6 +311,8 @@ func show_game_over(final_score: int) -> void:
 func get_move_vector() -> Vector2:
 	if not touch_controls.visible:
 		return Vector2.ZERO
+	if is_menu_open():
+		return Vector2.ZERO    # gun list khuli hai -> player wahin khada rahe
 	return joystick.output
 
 

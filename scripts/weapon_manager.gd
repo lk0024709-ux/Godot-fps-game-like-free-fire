@@ -107,11 +107,15 @@ func start_reload() -> void:
 	reload_started.emit(reload_time)
 
 
-## Reload beech me rok do (weapon badalne pe)
+## Reload beech me rok do (weapon badalne pe / player ki maut pe).
+## Signal bhejna zaroori hai: HUD "RELOADING" likhta hai reload_started pe aur
+## ammo wapas dikhata hai reload_finished pe — signal ke bina HUD atka reh jata.
 func cancel_reload() -> void:
-	if reloading:
-		reloading = false
-		_reload_left = 0.0
+	if not reloading:
+		return
+	reloading = false
+	_reload_left = 0.0
+	reload_finished.emit()
 
 
 # ============================================================== SWITCHING ====
@@ -126,8 +130,8 @@ func switch_weapon(index: int) -> void:
 		return                       # wahi weapon dobara -> kuch nahi karo
 
 	current_index = target
-	cancel_reload()
 	current_ammo = get_ammo_max()
+	cancel_reload()             # naye weapon ka ammo set hone ke BAAD, taaki HUD sahi number dikhaye
 	_equipped = true
 	build_model()
 	weapon_changed.emit(get_current_name(), current_ammo, get_ammo_max())

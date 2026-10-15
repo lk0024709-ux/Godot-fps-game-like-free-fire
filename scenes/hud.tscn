@@ -86,7 +86,7 @@ offset_top = 1.0
 offset_right = 16.0
 offset_bottom = 9.0
 mouse_filter = 2
-color = Color(0.6, 1, 0.7, 0.9)
+color = Color(1, 1, 1, 0.92)
 
 [node name="Bottom" type="ColorRect" parent="Crosshair"]
 layout_mode = 1
@@ -96,7 +96,7 @@ offset_top = 19.0
 offset_right = 16.0
 offset_bottom = 27.0
 mouse_filter = 2
-color = Color(0.6, 1, 0.7, 0.9)
+color = Color(1, 1, 1, 0.92)
 
 [node name="Left" type="ColorRect" parent="Crosshair"]
 layout_mode = 1
@@ -106,7 +106,7 @@ offset_top = 12.0
 offset_right = 9.0
 offset_bottom = 16.0
 mouse_filter = 2
-color = Color(0.6, 1, 0.7, 0.9)
+color = Color(1, 1, 1, 0.92)
 
 [node name="Right" type="ColorRect" parent="Crosshair"]
 layout_mode = 1
@@ -116,7 +116,7 @@ offset_top = 12.0
 offset_right = 27.0
 offset_bottom = 16.0
 mouse_filter = 2
-color = Color(0.6, 1, 0.7, 0.9)
+color = Color(1, 1, 1, 0.92)
 
 [node name="Dot" type="ColorRect" parent="Crosshair"]
 layout_mode = 1
@@ -126,7 +126,7 @@ offset_top = 12.0
 offset_right = 16.0
 offset_bottom = 16.0
 mouse_filter = 2
-color = Color(0.9, 1, 0.9, 1)
+color = Color(1, 1, 1, 1)
 
 [node name="HealthLabel" type="Label" parent="."]
 layout_mode = 3
@@ -245,14 +245,10 @@ mouse_filter = 2
 
 [node name="Joystick" type="Control" parent="TouchControls"]
 layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
+anchors_preset = 0
+anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = 40.0
-offset_top = -280.0
-offset_right = 260.0
-offset_bottom = -60.0
-grow_vertical = 0
+grow_vertical = 2
 mouse_filter = 0
 script = ExtResource("2_joystick")
 
@@ -364,7 +360,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
+mouse_filter = 1
 
 [node name="PanelBox" type="ColorRect" parent="WeaponPanel"]
 layout_mode = 1
@@ -379,7 +375,7 @@ offset_right = 480.0
 offset_bottom = 240.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 0
+mouse_filter = 2
 color = Color(0.03, 0.04, 0.06, 0.92)
 
 [node name="PanelTitle" type="Label" parent="WeaponPanel"]
@@ -415,6 +411,7 @@ offset_right = 450.0
 offset_bottom = 190.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 0
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 columns = 4

@@ -38,7 +38,7 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
 
 | Kaam | PC | Android |
 |---|---|---|
-| Chalna | `W A S D` (ya arrow keys) | Left-bottom **joystick** |
+| Chalna | `W A S D` (ya arrow keys) | **Left half** me kahin bhi ungli rakho (joystick wahin ban jata hai) |
 | Dekhna | Mouse | Screen ke **right half pe swipe** |
 | Firing | Left click / Enter (hold = auto fire) | **FIRE** button (bottom-right) |
 | Gun badalna | `Q` pichhla / `E` agla / `mouse wheel`, `1-9` seedha gun | **SWAP** button (agla gun) |
@@ -99,7 +99,7 @@ scenes/main.tscn               # Main scene: sky + sun + player + HUD + timer (b
 scenes/player.tscn             # Player body + head + camera (FOV 75) + gun model
 scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
-scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP buttons
+scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
 scripts/main.gd                # Game manager: arena banata hai, enemies spawn karta hai, score + game over
 scripts/weapon_data.gd         # 28 weapons ke stats + skin colours (sirf data — yahan numbers badlo)
@@ -107,9 +107,9 @@ scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (sign
 scripts/assets.gd              # 5 weapon models — sab box/cylinder/cone/sphere se, koi texture nahi
 scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage
 scripts/enemy.gd               # Player ko follow karta hai, touch pe damage, flash + death
-scripts/bullet.gd              # Ray-check wali goli (2 sec lifetime, enemy ko damage)
+scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
-scripts/joystick.gd            # On-screen virtual joystick (khud draw karta hai, koi image nahi)
+scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
 
 .github/workflows/build-apk.yml # GitHub Actions: Godot 4.2.2 download + keystore + APK export + upload
 ```
@@ -147,7 +147,7 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 | Actions me **import** step me JS/JSON error | `.tscn` file me syntax issue — log ki line paste karo |
 | Phone pe "App not installed" | Purana app uninstall karo (test keystore badal jata hai), ya Settings me "unknown sources" allow karo |
 | Gun badalne/equip karne ke liye mobile pe | **SWAP** (agla gun) ya **GUNS** (poori list) — PC pe `Q`/`E`/`G`/`1-9` |
-| Gun-picker khulta hai par tap kaam nahi karta | Pehli ungli joystick pe hai to doosri ungli ke tap ko Android/Godot mouse me nahi badalta — joystick chhod kar tap karo |
+| Gun-picker khulta hai par tap kaam nahi karta | Ab ye multi-touch safe hai (grid khud raw touch leta hai). Purane build me ye problem thi — naya APK install karo |
 | Game khulta hai par touch kaam nahi karta | Confirm karo ki build **Android** ke liye hua (PC/other platform ke liye nahi) aur `hud.tscn` me `TouchControls` node hai |
 | Game crash / black screen | Android me `adb logcat` chalao ya phone pe crash dialog ka text bhej do |
 | PC pe test karna hai | PC pe **Godot 4.2.2** install karo (free, ~100 MB) → `project.godot` import karo → `F5` dabao |
