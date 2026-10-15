@@ -107,6 +107,7 @@ scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (sign
 scripts/assets.gd              # 5 weapon models — sab box/cylinder/cone/sphere se, koi texture nahi
 scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage
 scripts/enemy.gd               # Player ko follow karta hai, touch pe damage, flash + death
+scripts/asset_loader.gd        # Downloaded CC0 models load karta hai (fail-safe: na mile to null)
 scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
@@ -126,6 +127,8 @@ scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho w
 | Enemy speed / HP / damage | `scenes/enemy.tscn` khologe to inspector me dikhega, ya `scripts/enemy.gd` ke `@export` defaults |
 | Kitne enemies + spawn speed | `scenes/main.tscn` → `Main` node ke inspector me (`max_enemies`, `spawn_interval`) |
 | Maidan ka size / cover boxes | `scripts/main.gd` → `arena_size` aur `_obstacles` list |
+| Ped / patthar / jhaadi / ghaas ki ginti | `scripts/main.gd` → `tree_count`, `rock_count`, `bush_count`, `grass_count` |
+| Nature ka layout (kahan kya uge) | `scripts/main.gd` → `nature_seed` (same seed = same map) |
 | Kisi bhi gun ka damage / ammo / speed | `scripts/weapon_data.gd` → us gun ki line (ek hi line me sab hai) |
 | Gun ka rang (skin) | `scripts/weapon_data.gd` → wahi line, `GOLD`/`BLACK` jaise colour naam |
 | Naye colour add karne ho | `scripts/weapon_data.gd` ke top pe `const MY_COLOR := Color(...)` |
@@ -139,6 +142,35 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 
 ---
 
+## 5b. Asset Sources (build ke waqt download hote hain)
+
+Game me do tarah ke models hain:
+
+1. **Downloaded CC0 models** — GitHub Actions build ke waqt inhe `assets/downloaded/`
+   me bharta hai (workflow step **7c**). Ye files repo me commit NAHI hoti
+   (`.gitignore` me `assets/downloaded/` hai) — isliye repo halka rehta hai aur
+   APK me sirf wahi model jaate hain jo game use karta hai.
+2. **Procedural fallback** — agar download fail ho jaye (net/github down, ya koi file
+   missing), `scripts/assets.gd` wahi model **code se** bana deta hai (boxes/cones).
+   Build tab bhi **pass** hota hai — sirf shapes simple ho jaate hain.
+
+| Pack | Kya use hota hai | License | Source | Pinned commit |
+|---|---|---|---|---|
+| **Kenney Nature Kit 2.1** (by Kenney, kenney.nl) | 14 `.glb` models — trees (5), rocks (4), bushes (3), grass (2) | **CC0 1.0** (public domain) | https://github.com/ETdoFresh/kenney.nl (kenney.nl mirror) → `kenney_natureKit_2.1/Models/GLTF format/` | `45df48c4d45f8716216b1a9e22df0b69cd9f5932` |
+| Original pack page | — | CC0 1.0 | https://kenney.nl/assets/nature-kit | — |
+
+- License text (har pack ke andar): `kenney_natureKit_2.1/License.txt` → *"License: (Creative Commons Zero, CC0) http://creativecommons.org/publicdomain/zero/1.0/"*
+- CC0 ka matlab: commercial use, modify, redistribute — sab allowed, credit ki zaroorat bhi nahi.
+  Phir bhi credit diya gaya hai (upar table me) — achhi practice hai.
+- Total size: **~145 KB** (sabse bada tree 31 KB) — APK size par asar na ke barabar hai.
+- Download URL pinned commit pe hai, isliye upstream repo update hone se build nahi tootega.
+
+> Ek note: jo sources pehle socho gaye the — `Malcolmnixon/Quaternius-Nature` (repo
+> exist hi nahi karta) aur `Malcolmnixon/Shapespark-Low-Poly-Exterior-Plants` (usme
+> `.glb` nahi hain, Godot `.tscn` hain, aur original assets Git-LFS pe hain) — dono
+> build-time `curl` ke liye kaam nahi karte. Isliye **Kenney Nature Kit** chuna gaya:
+> plain `.glb` files, koi LFS nahi, clearly CC0.
+
 ## 6. Kuch galat ho to (troubleshooting)
 
 | Problem | Kya karo |
@@ -148,6 +180,7 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 | Phone pe "App not installed" | Purana app uninstall karo (test keystore badal jata hai), ya Settings me "unknown sources" allow karo |
 | Gun badalne/equip karne ke liye mobile pe | **SWAP** (agla gun) ya **GUNS** (poori list) — PC pe `Q`/`E`/`G`/`1-9` |
 | Gun-picker khulta hai par tap kaam nahi karta | Ab ye multi-touch safe hai (grid khud raw touch leta hai). Purane build me ye problem thi — naya APK install karo |
+| Ped/patthar simple box jaise dikh rahe hain | Download fail hua (procedural fallback chal raha hai) — Actions log me step **7c** dekho, `nature models ready: N` line milegi (N = 14 matlab sab download hue) |
 | Game khulta hai par touch kaam nahi karta | Confirm karo ki build **Android** ke liye hua (PC/other platform ke liye nahi) aur `hud.tscn` me `TouchControls` node hai |
 | Game crash / black screen | Android me `adb logcat` chalao ya phone pe crash dialog ka text bhej do |
 | PC pe test karna hai | PC pe **Godot 4.2.2** install karo (free, ~100 MB) → `project.godot` import karo → `F5` dabao |

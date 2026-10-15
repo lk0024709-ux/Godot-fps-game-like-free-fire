@@ -11,6 +11,10 @@ permissions:
 env:
   GODOT_VERSION: "4.2.2"
   GODOT_CHANNEL: "stable"
+  # CC0 nature assets (Kenney Nature Kit 2.1) — cache key + pinned commit
+  # (pinned SHA = wahi files hamesha, chahe upstream repo aage badh jaye)
+  NATURE_ASSET_VERSION: "kenney-nature-kit-2.1"
+  NATURE_ASSET_SHA: "45df48c4d45f8716216b1a9e22df0b69cd9f5932"
 
 jobs:
   build-apk:
@@ -144,6 +148,74 @@ jobs:
           set -euo pipefail
           touch "$DIAG"
           godot --version 2>&1 | tee -a "$DIAG"
+
+      # -------------------------------------------------------------- assets --
+      # CC0 nature models (Kenney Nature Kit 2.1) — build ke waqt download hote hain,
+      # isliye repo me koi binary file (.glb) commit nahi karni padti.
+      # Download fail ho gaya to koi baat nahi: scripts/assets.gd ka procedural
+      # fallback use hota hai aur game PHIR BHI banta hai (fail-soft).
+      # NOTE: ye step "Project import" se PEHLE hona zaroori hai — import ke waqt hi
+      # Godot in .glb files ko padhta hai.
+      - name: "7b) Cache: downloaded CC0 assets"
+        uses: actions/cache@v4
+        with:
+          path: assets/downloaded
+          key: cc0-assets-${{ env.NATURE_ASSET_VERSION }}-${{ env.NATURE_ASSET_SHA }}
+
+      - name: "7c) Download CC0 nature assets (fail-soft)"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          DEST="assets/downloaded/nature"
+          mkdir -p "$DEST"
+          # "GLTF format" me space hai -> %20
+          BASE="https://raw.githubusercontent.com/ETdoFresh/kenney.nl/${NATURE_ASSET_SHA}/kenney_natureKit_2.1/Models/GLTF%20format"
+
+          # Ye 14 files (~145 KB total) scripts/assets.gd ke NATURE_MODELS se match karti hain
+          FILES=(
+            tree_default.glb tree_detailed.glb tree_pineTallA.glb tree_pineRoundC.glb tree_fat.glb
+            rock_largeA.glb rock_largeC.glb rock_smallB.glb rock_smallFlatA.glb
+            plant_bushDetailed.glb plant_bush.glb plant_bushSmall.glb
+            grass.glb grass_large.glb
+          )
+
+          # Poora download 150 second me nipat jaye (workflow ka 10 min budget bachane ke liye)
+          DEADLINE=$(( $(date +%s) + 150 ))
+          for f in "${FILES[@]}"; do
+            if [ -s "$DEST/$f" ]; then
+              continue                                  # cache se mil gaya
+            fi
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+              echo "::warning::time budget khatam -> baaki models skip (procedural fallback chalega)" | tee -a "$DIAG"
+              break
+            fi
+            if curl -sSL --retry 3 --retry-delay 3 --max-time 120 -o "$DEST/$f" "$BASE/$f"; then
+              :
+            else
+              echo "::warning::download fail: $f" | tee -a "$DIAG"
+            fi
+          done
+
+          # Asli GLB hai? (LFS pointer / HTML error page / adhoori file hata do)
+          for f in "$DEST"/*.glb; do
+            [ -e "$f" ] || continue
+            if ! head -c 4 "$f" | grep -q "glTF"; then
+              echo "::warning::$(basename "$f") asli GLB nahi hai -> hata diya" | tee -a "$DIAG"
+              rm -f "$f" "$f.import"
+            fi
+          done
+
+          COUNT=$(ls -1 "$DEST"/*.glb 2>/dev/null | wc -l)
+          echo "nature models ready: $COUNT" | tee -a "$DIAG"
+          du -sh "$DEST" 2>/dev/null | tee -a "$DIAG" || true
+
+          # Kam se kam 5 chahiye — warna warning (build fail NAHI hota)
+          if [ "$COUNT" -lt 5 ]; then
+            echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
+          fi
 
       - name: "8) Project import (headless)"
         run: |

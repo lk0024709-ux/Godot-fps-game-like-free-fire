@@ -38,3 +38,6 @@ Thumbs.db
 
 # CI build log (workflow ikattha karta hai)
 build-log.txt
+
+# CI/downloaded assets (GitHub Actions build ke waqt bharta hai — .glb files)
+assets/downloaded/
