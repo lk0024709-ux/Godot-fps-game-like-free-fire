@@ -15,6 +15,10 @@ signal fire_pressed
 signal fire_released
 signal jump_pressed
 signal restart_pressed
+## Gun-picker se weapon chuna gaya (index). NOTE: switch pehle hi ho chuka hota hai
+## (HUD khud weapon_manager.switch_weapon(index) call karta hai) — ye signal sirf
+## "user ne ye chuna" batane ke liye hai, isliye ise dobara switch karne ke liye use mat karo.
+signal weapon_selected(index: int)
 
 const DATA := preload("res://scripts/weapon_data.gd")
 
@@ -224,6 +228,7 @@ func _on_guns_button_pressed() -> void:
 func _on_weapon_button_pressed(index: int) -> void:
 	if weapon_manager != null and is_instance_valid(weapon_manager):
 		weapon_manager.switch_weapon(index)
+	weapon_selected.emit(index)
 	close_weapon_menu()
 
 
@@ -270,6 +275,26 @@ func _on_weapon_panel_gui_input(event: InputEvent) -> void:
 		var click := event as InputEventMouseButton
 		if click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
 			close_weapon_menu()
+
+
+# ==================================== public API (bahar se bhi call kar sakte ho)
+# Ye 4 wrapper hain taaki koi bhi script inhe seedha call kar sake.
+# Andar ka kaam wahi handlers karte hain jo weapon_manager ke signals se chalte hain.
+
+func set_weapon(weapon_name: String, ammo: int, ammo_max: int) -> void:
+	_on_weapon_changed(weapon_name, ammo, ammo_max)
+
+
+func set_ammo(ammo: int) -> void:
+	_on_ammo_changed(ammo)
+
+
+func show_reloading() -> void:
+	_on_reload_started(1.2)
+
+
+func hide_reloading() -> void:
+	_on_reload_finished()
 
 
 # ============================================================ values dikhana ==

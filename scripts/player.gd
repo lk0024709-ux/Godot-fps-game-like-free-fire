@@ -234,6 +234,30 @@ func _handle_weapon_input() -> void:
 			weapon_manager.switch_weapon(i)
 
 
+# ---------------------------------------------------- bahar ke liye helpers --
+# HUD / future systems inhe call kar sakte hain (poora kaam weapon_manager karta hai)
+
+func switch_weapon_next() -> void:
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		weapon_manager.next_weapon()
+
+
+func switch_weapon_prev() -> void:
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		weapon_manager.prev_weapon()
+
+
+func switch_weapon_idx(index: int) -> void:
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		weapon_manager.switch_weapon(index)
+
+
+func get_weapon_index() -> int:
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		return weapon_manager.current_index
+	return 0
+
+
 # ---------------------------------------------------------------- shooting ---
 
 func _handle_firing(delta: float) -> void:
