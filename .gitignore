@@ -1,25 +1,40 @@
-# Godot 4.2+ specific ignores
+# Godot 4+ cache (Godot khud banata hai, repo me daalne ki zaroorat nahi)
+.godot/
 ~*.dll
 
-# Godot 4+ specific ignores
-.godot/
-.nomedia
+# Godot 3 wale .import files (Godot 4 me use nahi hote)
+*.import
 
-# Godot-specific ignores
-.import/
+# Export / build ke outputs
+build/
+*.apk
+*.aab
+*.pck
+
+# Native exports
+*.exe
 export.cfg
 export_credentials.cfg
 *.tmp
 
-# Imported translations (automatically generated from CSV files)
+# Android build template (GitHub Actions khud install karta hai)
+android/
+
+# Keystore kabhi commit na karo
+*.keystore
+*.jks
+
+# Imported translations
 *.translation
 
-# Mono-specific ignores
+# Mono / C#
 .mono/
 data_*/
 mono_crash.*.json
 
-# Export outputs
-*.exe
-# Uncomment if your project does not version PCK files as runtime dependencies.
-# *.pck
+# OS junk
+.DS_Store
+Thumbs.db
+
+# CI build log (workflow ikattha karta hai)
+build-log.txt
