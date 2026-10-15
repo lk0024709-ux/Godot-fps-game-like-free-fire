@@ -8,6 +8,7 @@ extends Node3D
 ##
 
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
+const Assets := preload("res://scripts/assets.gd")
 
 @export_group("Enemy Spawning")
 @export var spawn_interval: float = 1.8          ## kitne second me naya enemy
@@ -17,6 +18,15 @@ const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 
 @export_group("Arena")
 @export var arena_size: float = 40.0             ## maidan kitna bada (40 = 40x40m, 20 = 20x20m)
+
+@export_group("Nature")
+## Ye seed fix hai — isliye har baar wahi ped/patthar/ghaas wahi jagah pe ugte hain.
+## Badal ke dekho: pura layout badal jayega (par phir bhi deterministic rahega).
+@export var nature_seed: int = 20241015
+@export var tree_count: int = 14                 ## ped (deewar ke paas patti me)
+@export var rock_count: int = 10                 ## patthar
+@export var bush_count: int = 12                 ## jhaadiyaan
+@export var grass_count: int = 26                ## ghaas ke guchhe (inme collision nahi hota)
 
 ## Neeche wala layout isi 40x40 ke hisaab se likha hai. arena_size badloge to
 ## sab kuch (deewarein + cover boxes + spawn ghere) automatically scale ho jayega.
@@ -75,6 +85,8 @@ func _ready() -> void:
 	player.health_changed.connect(hud.set_health)
 	player.died.connect(_on_player_died)
 
+	# HP bar player ke max_health ke hisaab se (player.gd me max_health badlo to bar bhi sahi)
+	hud.set_max_health(player.max_health)
 	hud.set_health(player.health)
 	hud.set_score(score)
 
@@ -113,6 +125,73 @@ func _build_arena() -> void:
 	var scale_factor: float = arena_size / ARENA_REFERENCE
 	for item in _obstacles:
 		_add_box((item[0] as Vector3) * scale_factor, (item[1] as Vector3) * scale_factor, item[2])
+
+	# ---- nature: ped / patthar / jhaadi / ghaas (hybrid: download ya procedural) ----
+	_scatter_nature()
+
+
+# ------------------------------------------------------------- nature props --
+
+## Ped / patthar / jhaadi / ghaas ko maidan ke kinare wali patti me bikher deta hai.
+##
+## Deterministic: `nature_seed` fix hai, isliye har run me SAME layout banta hai.
+## Saare props deewar ke paas wali patti me rakhe jaate hain (beech ka khel ka maidan
+## khula rehta hai) — enemies ke spawn ring (radius 0.4 * arena_size) se bahar.
+##
+## Har prop pehle "downloaded CC0 model" try karta hai, warna procedural shape
+## (dekho scripts/assets.gd + scripts/asset_loader.gd). Download fail ho to ye
+## function wahi kaam procedural se kar deta hai — koi error nahi.
+func _scatter_nature() -> void:
+	var arena_scale: float = arena_size / ARENA_REFERENCE
+	var rng := RandomNumberGenerator.new()
+	rng.seed = nature_seed
+
+	var inner_radius: float = arena_size * 0.5 - 1.3        # deewar se thoda andar
+	var band_min: float = inner_radius * 0.86               # ped/patthar isi patti me
+	# chhote maidan me itne hi props lagao (warna bhare-bhare lagega)
+	var area_scale: float = maxf(0.3, arena_scale * arena_scale)
+
+	var container := Node3D.new()
+	container.name = "Nature"
+	add_child(container)
+
+	var kinds := {
+		"tree": [tree_count, 0.95, 1.35, 1.0],
+		"rock": [rock_count, 0.85, 1.30, 1.0],
+		"bush": [bush_count, 0.90, 1.40, 1.0],
+		"grass": [grass_count, 0.85, 1.55, 0.62],   # ghaas thodi andar tak bhi aa sakti hai
+	}
+
+	for kind in ["tree", "rock", "bush", "grass"]:
+		var spec: Array = kinds[kind]
+		var total: int = maxi(4, int(float(spec[0]) * area_scale))
+		var min_scale: float = float(spec[1])
+		var max_scale: float = float(spec[2])
+		var band_factor: float = float(spec[3])
+
+		for i in total:
+			var angle := rng.randf() * TAU
+			var radius := rng.randf_range(inner_radius * band_factor, inner_radius)
+			var prop: Node3D = _make_prop(kind, i % 5, rng.randf_range(min_scale, max_scale) * arena_scale)
+			if prop == null:
+				continue
+			prop.position = Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+			prop.rotation.y = rng.randf() * TAU      # halka ghumav, natural lage
+			container.add_child(prop)
+
+
+## Ek nature prop banao (kind ke hisaab se assets.gd ka function)
+func _make_prop(kind: String, variant: int, scale_f: float) -> Node3D:
+	match kind:
+		"tree":
+			return Assets.tree(scale_f, variant)
+		"rock":
+			return Assets.rock(scale_f, variant)
+		"bush":
+			return Assets.bush(scale_f, variant)
+		"grass":
+			return Assets.grass_tuft(scale_f, variant)
+	return null
 
 
 func _add_box(box_pos: Vector3, box_size: Vector3, color: Color) -> void:

@@ -15,6 +15,10 @@ signal fire_pressed
 signal fire_released
 signal jump_pressed
 signal restart_pressed
+## Gun-picker se weapon chuna gaya (index). NOTE: switch pehle hi ho chuka hota hai
+## (HUD khud weapon_manager.switch_weapon(index) call karta hai) — ye signal sirf
+## "user ne ye chuna" batane ke liye hai, isliye ise dobara switch karne ke liye use mat karo.
+signal weapon_selected(index: int)
 
 const DATA := preload("res://scripts/weapon_data.gd")
 
@@ -224,6 +228,7 @@ func _on_guns_button_pressed() -> void:
 func _on_weapon_button_pressed(index: int) -> void:
 	if weapon_manager != null and is_instance_valid(weapon_manager):
 		weapon_manager.switch_weapon(index)
+	weapon_selected.emit(index)
 	close_weapon_menu()
 
 
@@ -272,15 +277,44 @@ func _on_weapon_panel_gui_input(event: InputEvent) -> void:
 			close_weapon_menu()
 
 
+# ==================================== public API (bahar se bhi call kar sakte ho)
+# Ye 4 wrapper hain taaki koi bhi script inhe seedha call kar sake.
+# Andar ka kaam wahi handlers karte hain jo weapon_manager ke signals se chalte hain.
+
+func set_weapon(weapon_name: String, ammo: int, ammo_max: int) -> void:
+	_on_weapon_changed(weapon_name, ammo, ammo_max)
+
+
+func set_ammo(ammo: int) -> void:
+	_on_ammo_changed(ammo)
+
+
+func show_reloading() -> void:
+	_on_reload_started(1.2)
+
+
+func hide_reloading() -> void:
+	_on_reload_finished()
+
+
 # ============================================================ values dikhana ==
+
+## HP bar ka maximum set karo (main.gd player.max_health se call karta hai).
+## Isse player ki max HP 100 se badlo to bar bhi apne aap sahi ho jata hai.
+func set_max_health(value: int) -> void:
+	if value > 0:
+		health_bar.max_value = float(value)
+
 
 func set_health(value: int) -> void:
 	health_bar.value = value
 	health_label.text = "HP: %d" % value
-	# HP kam hone pe rang badal jaye
-	if value > 60:
+	# HP kam hone pe rang badal jaye (bar ke MAX ke hisaab se, yaani percentage)
+	var max_v: float = maxf(1.0, health_bar.max_value)
+	var pct := float(value) / max_v
+	if pct > 0.6:
 		health_bar.modulate = Color(0.6, 1.0, 0.6)
-	elif value > 30:
+	elif pct > 0.3:
 		health_bar.modulate = Color(1.0, 0.85, 0.4)
 	else:
 		health_bar.modulate = Color(1.0, 0.45, 0.4)
