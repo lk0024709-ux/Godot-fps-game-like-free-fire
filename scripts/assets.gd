@@ -400,7 +400,7 @@ static func _try_downloaded(kind: String, variant: int, scale_f: float, node_nam
 	var model := inst as Node3D
 
 	model.scale = Vector3.ONE * scale_f
-	model.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# NOTE: meshes ke shadows default ON hote hain (MeshInstance3D), kuch set karne ki zaroorat nahi.
 
 	var root := Node3D.new()
 	root.name = node_name
@@ -496,13 +496,18 @@ static func _visual_aabb(node: Node3D) -> AABB:
 		var low := Vector3.INF
 		var high := -Vector3.INF
 		for i in 8:
-			var corner := child_box.position + Vector3(
-				child_box.size.x if (i & 1) != 0 else 0.0,
-				child_box.size.y if (i & 2) != 0 else 0.0,
-				child_box.size.z if (i & 4) != 0 else 0.0)
-			var world_corner: Vector3 = xform * corner
-			low = low.min(world_corner)
-			high = high.max(world_corner)
+			# 8 corners = box ke har combination ko jodna (bit 0 = x, bit 1 = y, bit 2 = z)
+			var offset := Vector3.ZERO
+			if (i & 1) != 0:
+				offset.x = child_box.size.x
+			if (i & 2) != 0:
+				offset.y = child_box.size.y
+			if (i & 4) != 0:
+				offset.z = child_box.size.z
+			var world_corner: Vector3 = xform * (child_box.position + offset)
+			# NOTE: Vector3.min()/max() sirf Godot 4.3+ me hain — 4.2 ke liye minf/maxf
+			low = Vector3(minf(low.x, world_corner.x), minf(low.y, world_corner.y), minf(low.z, world_corner.z))
+			high = Vector3(maxf(high.x, world_corner.x), maxf(high.y, world_corner.y), maxf(high.z, world_corner.z))
 		var box_in_parent := AABB(low, high - low)
 
 		result = box_in_parent if not has_any else result.merge(box_in_parent)
