@@ -274,13 +274,22 @@ func _on_weapon_panel_gui_input(event: InputEvent) -> void:
 
 # ============================================================ values dikhana ==
 
+## HP bar ka maximum set karo (main.gd player.max_health se call karta hai).
+## Isse player ki max HP 100 se badlo to bar bhi apne aap sahi ho jata hai.
+func set_max_health(value: int) -> void:
+	if value > 0:
+		health_bar.max_value = float(value)
+
+
 func set_health(value: int) -> void:
 	health_bar.value = value
 	health_label.text = "HP: %d" % value
-	# HP kam hone pe rang badal jaye
-	if value > 60:
+	# HP kam hone pe rang badal jaye (bar ke MAX ke hisaab se, yaani percentage)
+	var max_v: float = maxf(1.0, health_bar.max_value)
+	var pct := float(value) / max_v
+	if pct > 0.6:
 		health_bar.modulate = Color(0.6, 1.0, 0.6)
-	elif value > 30:
+	elif pct > 0.3:
 		health_bar.modulate = Color(1.0, 0.85, 0.4)
 	else:
 		health_bar.modulate = Color(1.0, 0.45, 0.4)

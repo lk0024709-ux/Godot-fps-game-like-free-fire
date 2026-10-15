@@ -83,8 +83,27 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
 - `GUNS` button (ya PC pe `G`) se poori list khulti hai — har button pe us gun ka skin
   colour dikhta hai, tap karo aur gun equip.
 - Ammo poora bhara milta hai (reserve ammo system nahi hai) — simple rakhne ke liye.
-- Enemy ka HP **100** hai (pehle 20 tha) taaki chhoti gun aur sniper me farq mehsoos ho.
-  Wapas 20 karna ho to `scripts/enemy.gd` me `max_health = 100.0` ki jagah `20.0` kar do.
+- Enemy ka HP **200** hai taaki chhoti gun aur sniper me farq saaf mehsoos ho.
+  Value badalni ho to `scripts/enemy.gd` me sirf `max_health = 200.0` ka number badal do.
+
+### Enemy ko marne me kitni goli lagti hai (200 HP pe)
+
+| Gun ka type | Example | Per goli damage | Kitni goli |
+|---|---|---|---|
+| Sniper (sabse strong) | M82B | 120 | **2** |
+| Sniper | AWM | 95 | **3** |
+| Sniper / Pistol | Kar98k / M500 | 88 / 90 | **3** |
+| Rifle | AK / Groza | 60 / 61 | **4** |
+| Rifle | M4A1 / SCAR | 48 / 53 | **4-5** |
+| Pistol | Desert Eagle | 55 | **4** |
+| Pistol | USP | 30 | **7** |
+| SMG | MP40 / Vector | 24 / 28 | **8-9** |
+| SMG (sabse halki) | Skorpion | 20 | **10** |
+| Shotgun | SPAS12 (6 pellets x 14) | 84 (sab lage to) | **3 blast** |
+| Shotgun | MAG-7 (8 pellets x 18) | 144 (sab lage to) | **2 blast** |
+
+> Note: shotgun ke pellets bikharte hain — door se chalane pe sab nahi lagte, isliye
+> asli goliyaan isse zyada lagengi. Yahi balance ka maza hai.
 
 ---
 
@@ -106,7 +125,7 @@ scripts/weapon_data.gd         # 28 weapons ke stats + skin colours (sirf data �
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
 scripts/assets.gd              # 5 weapon models — sab box/cylinder/cone/sphere se, koi texture nahi
 scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage
-scripts/enemy.gd               # Player ko follow karta hai, touch pe damage, flash + death
+scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death
 scripts/asset_loader.gd        # Downloaded CC0 models load karta hai (fail-safe: na mile to null)
 scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
@@ -134,7 +153,8 @@ scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho w
 | Naye colour add karne ho | `scripts/weapon_data.gd` ke top pe `const MY_COLOR := Color(...)` |
 | Reload time | `scripts/weapon_manager.gd` → `reload_time` (default 1.2) |
 | Gun ka size screen pe | `scenes/player.tscn` → `Head/Camera3D/WeaponHolder` ki position, aur `weapon_manager.gd` ka `model_scale` (0.7) |
-| Enemy ka HP | `scripts/enemy.gd` → `max_health` (abhi 100) |
+| Enemy ka HP | `scripts/enemy.gd` → `max_health` (abhi **200** — pistol ~7, sniper 2-3 goli) |
+| Player ki HP | `scripts/player.gd` → `max_health` (abhi 100) — HP bar apne aap isi ke hisaab se set hoti hai |
 | Score per kill | `scripts/main.gd` → `_on_enemy_died()` me `score += 10` |
 | HUD ka rang / button size | `scenes/hud.tscn` ke stylebox + offsets |
 

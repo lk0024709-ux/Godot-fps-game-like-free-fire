@@ -85,6 +85,8 @@ func _ready() -> void:
 	player.health_changed.connect(hud.set_health)
 	player.died.connect(_on_player_died)
 
+	# HP bar player ke max_health ke hisaab se (player.gd me max_health badlo to bar bhi sahi)
+	hud.set_max_health(player.max_health)
 	hud.set_health(player.health)
 	hud.set_score(score)
 
