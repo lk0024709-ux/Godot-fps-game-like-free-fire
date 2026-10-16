@@ -77,9 +77,12 @@ Saath me **40 `.mtl`** (har gun ka apna material — colour wahi se aata hai) au
 5. **FPS > 30** — poore pack me sirf **56,822 triangles** (ek gun 309-1160 tris), koi texture nahi (sirf colour) — procedural models se bhi halka.
 6. **Fail-soft** — koi model file delete kar do to game phir bhi chalta hai (procedural gun), crash nahi.
 
-### CI evidence (commit `cb55478`, run #44)
-* Run `38910959200` — **Success**, 1 m 9 s; annotation *"Asset selftest PASS (downloaded + procedural dono chal rahe hain)"*; step 7d (OBJ conversion) / 7e (GLB check) / 8d (selftest) sab success.
-* Artifact `FreeFireFPS-apk` 23.7 MB (`sha256:7d7d46b6…4932`); release `latest-apk` ka `FreeFireFPS.apk` 25,155,101 bytes (2026-10-16 13:51 UTC) — phone pe direct download.
+### CI evidence (last 2 runs — dono **Success**)
+* Run `38910959200` (#44, commit `cb55478`) — 1 m 9 s; run `38911384726` (#45, commit `00663d5`) — 1 m 5 s.
+  Dono me annotation: *"Asset selftest PASS (downloaded + procedural dono chal rahe hain)"*, aur step
+  **7d) OBJ -> GLB conversion**, **7e) GLB sanity check**, **8d) Asset selftest**, **9) APK export** sab success.
+* Artifact `FreeFireFPS-apk` 23.7 MB (`sha256:b54fa685…a1ab`) + `build-log`.
+* Release **`latest-apk`** ka `FreeFireFPS.apk` = **25,155,101 bytes** (2026-10-16 13:54 UTC) — phone pe direct download.
 * Local validation (jaisa CI karta hai): `obj2glb.py` 40/40 converted, `glbcheck.py` **40/40, 0 errors**, 56,822 tris; har GLB ka Z = longest axis aur lambai = 1.000 (barrel -Z convention sab me sahi); winding check 40/40 *theek* (koi model inside-out nahi).
 
 ## 5) IF IT FAILS — 3 sabse zyada mumkin errors + fix
