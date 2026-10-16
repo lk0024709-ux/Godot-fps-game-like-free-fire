@@ -28,9 +28,9 @@ const Loader := preload("res://scripts/asset_loader.gd")
 
 const HALF_PI := PI * 0.5      # 90 degree (radians me)
 
-## Downloaded weapon ka target size (metres, -Z lambai). Pistol ke models upload me
-## nahi hain, isliye pistol procedural hi rehta hai. In numbers ko chhuna ho to
-## yahi jagah hai — poore game me yahi se weapon ka size tay hota hai.
+## Downloaded weapon ka target size (metres, -Z lambai). Poore game me weapon ka size
+## yahi se tay hota hai (per-gun `scale` `weapon_data.gd` me hai). In numbers ko chhuna
+## ho to yahi jagah hai.
 const WEAPON_TARGET_LENGTH := {
 	"pistol": 0.30,
 	"smg": 0.60,
@@ -219,7 +219,7 @@ static func _prepare_weapon_model(inst: Node3D, shape: String, body_color: Color
 	# ---- origin: X/Z center, aur ubhaar (Y) ko hataya — holder ke origin pe gun ka beech ----
 	# Z pe thoda AAGE (camera se door) khiska dete hain: warna poori gun ka aadha hissa
 	# camera ke peeche chala jata hai aur stock camera me ghus jata hai (near plane 0.05).
-	var forward_shift := 0.12 * target
+	var forward_shift := 0.12 * _weapon_target_length(shape, scale_hint)
 	var offset := Vector3(
 		-(box.position.x + box.size.x * 0.5) * factor,
 		-(box.position.y + box.size.y * 0.5) * factor,
@@ -401,6 +401,11 @@ static func fallback_character(body_color: Color, accent_color: Color,
 	return root
 
 
+## Us shape ki target lambai (metres) — `weapon_data.gd` ka per-gun `scale` bhi lagta hai.
+static func _weapon_target_length(shape: String, scale_hint: float) -> float:
+	return float(WEAPON_TARGET_LENGTH.get(shape, 1.0)) * maxf(0.05, scale_hint)
+
+
 ## Downloaded model ki asli lambai dekh kar scale factor nikalo.
 ##   * target: pistol 0.30 m, smg 0.60 m, rifle 1.20 m, sniper 1.40 m, shotgun 1.10 m
 ##     (per-weapon `scale` multiplier `weapon_data.gd` se aata hai — Bizon 1.3x etc.)
@@ -408,8 +413,7 @@ static func fallback_character(body_color: Color, accent_color: Color,
 ##     aadha (aakhri hadd) — taaki koi ajeeb file poore screen ko na bhar de.
 static func _normalize_scale(box: AABB, shape: String, scale_hint: float) -> float:
 	var length: float = maxf(box.size.z, 0.0001)
-	var target: float = float(WEAPON_TARGET_LENGTH.get(shape, 1.0)) * maxf(0.05, scale_hint)
-	var factor := target / length
+	var factor := _weapon_target_length(shape, scale_hint) / length
 	if length < 0.3:
 		factor = maxf(factor, 3.0)
 	elif length > 1.5:
