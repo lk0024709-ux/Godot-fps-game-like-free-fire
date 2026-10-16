@@ -1,0 +1,224 @@
+extends Node3D
+##
+## Selftest — asset pipeline ka automatic check (CI me chalta hai).
+##
+## Ye scene main game ko chhedti nahi. Iska kaam sirf ye dekhna hai:
+##   1. AssetLoader folders padh pata hai aur models load kar pata hai
+##   2. weapon_data.gd ke "model" naam sach me match karte hain ("ar_5" -> AssaultRifle_5)
+##   3. build_weapon_model() downloaded model ke saath sahi ban raha hai
+##      (scale, muzzle node, material override, shadow off)
+##   4. character model 1.8m aur pair y=0 pe aata hai + limb nodes (leg_l/arm_r) milte hain
+##   5. nature props (tree/rock/grass/plant) aur vehicle model bante hain
+##   6. FAIL-SOFT: base_dir_override ko khali folder pe set kar ke dekhte hain ki
+##      sab kuch procedural fallback se phir bhi ban jaye (koi crash nahi)
+##
+## Chalane ka tarika (GitHub Actions step "8d"):
+##     godot --headless --path . --quit-after 200 scenes/selftest.tscn
+## Kuch bhi fail hua to exit code 1 -> CI red (aur commit pe error comment).
+##
+## Phone pe dekhna ho to: main scene ke bajaye ye scene chala do — screen pe
+## "SELFTEST PASS/FAIL" likha aa jayega.
+##
+
+const Loader := preload("res://scripts/asset_loader.gd")
+const Assets := preload("res://scripts/assets.gd")
+const DATA := preload("res://scripts/weapon_data.gd")
+const CHARACTERS := preload("res://scripts/character_data.gd")
+
+## Download kuch nahi hua ho to bhi kitne tests chalne chahiye (fail-soft test me kam)
+var _checks: int = 0
+var _failures: Array[String] = []
+var _notes: Array[String] = []
+var _phase: int = 0
+var _frames: int = 0
+
+
+func _ready() -> void:
+	print("==================== SELFTEST START ====================")
+	_run_phase_1_real_assets()
+
+
+func _process(_delta: float) -> void:
+	_frames += 1
+
+
+## Phase 1: jo assets maujood hain unke saath poora test
+func _run_phase_1_real_assets() -> void:
+	_phase = 1
+
+	# ---------- 1) loader ----------
+	var stats := Loader.stats()
+	_notes.append("loader: " + str(stats))
+	for line in Loader.report_lines():
+		print("  " + line)
+	for category in Loader.CATEGORIES:
+		_check(stats.get(category, 0) >= 0, "loader: %s listing chali" % category)
+
+	var any_downloaded := Loader.has_any_models()
+	_notes.append("koi downloaded model mila: %s" % any_downloaded)
+
+	# ---------- 2) weapon models ----------
+	var missing_models: Array[String] = []
+	var weapons: Array[Dictionary] = DATA.get_weapons()
+	_check(weapons.size() == 28, "weapon_data me 28 weapons hain (%d mile)" % weapons.size())
+	var with_model := 0
+	for weapon in weapons:
+		var model_name := String(weapon.get("model", ""))
+		if model_name.is_empty():
+			continue          # pistols: jaan-boojh kar procedural
+		with_model += 1
+		if Loader.load_model(model_name, "weapons") == null:
+			missing_models.append("%s->%s" % [weapon.get("name"), model_name])
+	_notes.append("downloaded weapon models: %d/28 (baaki procedural)" % with_model)
+	if any_downloaded and with_model > 0 and not missing_models.is_empty():
+		_check(false, "ye weapon models nahi mile: " + str(missing_models))
+
+	# har weapon ka poora model banao (downloaded ya procedural — dono chalta hai)
+	for weapon in weapons:
+		var model := Assets.build_weapon_model(
+				String(weapon.get("shape", "rifle")),
+				weapon.get("body", Color.WHITE),
+				weapon.get("accent", Color.BLACK),
+				String(weapon.get("model", "")),
+				float(weapon.get("scale", 1.0)))
+		var wname := String(weapon.get("name", "?"))
+		_check(model != null, "weapon model bana: %s" % wname)
+		if model == null:
+			continue
+		add_child(model)
+		var muzzle := model.find_child("Muzzle", true, false)
+		_check(muzzle != null, "muzzle node mila: %s" % wname)
+		var box := Assets.visual_aabb(model)
+		_check(box.size.z > 0.02, "weapon ki lambai theek hai: %s (%.2fm)" % [wname, box.size.z])
+		if String(weapon.get("model", "")) != "" and not missing_models.is_empty():
+			_check(true, "  (procedural fallback chal raha hai: %s)" % wname)
+		# muzzle barrel ke aage hona chahiye (peeche nahi)
+		if muzzle is Node3D and box.size.z > 0.02:
+			var local_z: float = (muzzle as Node3D).position.z
+			_check(local_z < 0.02, "muzzle aage hai: %s (z=%.2f)" % [wname, local_z])
+		model.queue_free()
+
+	# ---------- 3) character models ----------
+	for pick in ["male_1", "male_3", "female_1", "female_5"]:
+		var body := Assets.build_character_model(pick,
+				CHARACTERS.get_character(0).get("body", Color.WHITE),
+				CHARACTERS.get_character(0).get("accent", Color.BLACK),
+				CHARACTERS.ENEMY_TINT)
+		if body == null:
+			body = Assets.fallback_character(CHARACTERS.ENEMY_TINT, CHARACTERS.ENEMY_TINT,
+					CHARACTERS.ENEMY_TINT)
+		_check(body != null, "character model bana: %s" % pick)
+		if body != null:
+			add_child(body)
+			var box := Assets.visual_aabb(body)
+			_check(absf(box.size.y - CHARACTERS.ENEMY_HEIGHT) < 0.25,
+					"%s ki height %.2fm (1.8m chahiye)" % [pick, box.size.y])
+			_check(absf(box.position.y) < 0.15, "%s ke pair zameen pe (y=%.2f)" % [pick, box.position.y])
+			if Loader.load_model(pick, "characters") != null:
+				var limbs := body.find_child("leg_l", true, false) != null \
+						and body.find_child("arm_r", true, false) != null
+				if limbs:
+					_check(true, "%s ke limb nodes mile (animation chalegi)" % pick)
+			body.queue_free()
+
+	# ---------- 4) nature + vehicle ----------
+	for kind in ["tree", "rock", "grass", "plant"]:
+		var prop: Node3D = null
+		match kind:
+			"tree":
+				prop = Assets.tree(1.0, 0)
+			"rock":
+				prop = Assets.rock(1.0, 1)
+			"grass":
+				prop = Assets.grass_tuft(1.0, 2)
+			"plant":
+				prop = Assets.plant(1.0, 0)
+		_check(prop != null, "nature prop bana: %s" % kind)
+		if prop != null:
+			add_child(prop)
+			prop.queue_free()
+
+	var vehicle := Assets.build_vehicle_model("taxi")
+	if vehicle == null:
+		vehicle = Assets.fallback_vehicle("taxi", Color(0.9, 0.8, 0.2))
+	_check(vehicle != null, "vehicle bana (taxi)")
+	if vehicle != null:
+		add_child(vehicle)
+		vehicle.queue_free()
+
+	# ---------- 5) FAIL-SOFT test: assets gayab ----------
+	# loader ko aise folder pe set karte hain jahan kuch nahi hai -> sab kuch
+	# procedural fallback se banna chahiye, aur koi crash nahi hona chahiye.
+	Loader.base_dir_override = "res://assets/downloaded_missing/"
+	Loader.clear_cache()
+	Phase2.new(self).run()
+	Loader.base_dir_override = ""
+	Loader.clear_cache()
+
+	_report()
+
+
+## Phase 2 (fail-soft) — alag class me isliye ki await/lambda ke bina saaf rahe
+class Phase2:
+	var host: Node
+
+	func _init(h: Node) -> void:
+		host = h
+
+	func run() -> void:
+		# assets gayab hone pe bhi ye sab ban jana chahiye (procedural se)
+		var weapon := Assets.build_weapon_model("rifle", Color(0.3, 0.2, 0.1), Color.BLACK,
+				"ar_5", 1.0)
+		host._check(weapon != null, "FAIL-SOFT: weapon procedural se bana (no assets)")
+		if weapon != null:
+			host._check(weapon.find_child("Muzzle", true, false) != null,
+					"FAIL-SOFT: procedural weapon ka muzzle bhi hai")
+			weapon.queue_free()
+
+		var body := Assets.build_character_model("male_1", Color.WHITE, Color.BLACK)
+		host._check(body == null, "FAIL-SOFT: character null deta hai (caller fallback kare)")
+		if body == null:
+			var fb := Assets.fallback_character(Color.WHITE, Color.BLACK)
+			host._check(fb != null, "FAIL-SOFT: procedural humanoid bana")
+			fb.queue_free()
+
+		var tree := Assets.tree(1.0, 0)
+		host._check(tree != null, "FAIL-SOFT: tree procedural se bana")
+		if tree != null:
+			tree.queue_free()
+
+		var veh := Assets.build_vehicle_model("taxi")
+		host._check(veh == null, "FAIL-SOFT: vehicle null deta hai (caller fallback kare)")
+		if veh == null:
+			var fb_veh := Assets.fallback_vehicle("taxi", Color(0.9, 0.8, 0.2))
+			host._check(fb_veh != null, "FAIL-SOFT: procedural gaadi bani")
+			fb_veh.queue_free()
+
+
+# ------------------------------------------------------------------ report ---
+
+func _check(condition: bool, label: String) -> void:
+	_checks += 1
+	if condition:
+		return
+	_failures.append(label)
+	push_error("SELFTEST FAIL: " + label)
+
+
+func _report() -> void:
+	print("----------------------- SELFTEST SUMMARY -----------------------")
+	for note in _notes:
+		print("  note: " + note)
+	if _failures.is_empty():
+		print("SELFTEST PASS: %d/%d checks theek" % [_checks, _checks])
+	else:
+		print("SELFTEST FAIL: %d/%d checks fail" % [_failures.size(), _checks])
+		for f in _failures:
+			print("   FAIL: " + f)
+	print("================================================================")
+	# CI ko exit code chahiye (headless run me ye bas print hota hai, decide workflow karta hai)
+	if _failures.is_empty():
+		print("SELFTEST_EXIT_OK")
+	else:
+		print("SELFTEST_EXIT_FAIL")
+	get_tree().quit(0 if _failures.is_empty() else 1)

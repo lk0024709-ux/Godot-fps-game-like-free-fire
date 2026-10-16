@@ -150,11 +150,14 @@ jobs:
           godot --version 2>&1 | tee -a "$DIAG"
 
       # -------------------------------------------------------------- assets --
-      # CC0 nature models (Kenney Nature Kit 2.1) — build ke waqt download hote hain,
-      # isliye repo me koi binary file (.glb) commit nahi karni padti.
-      # Download fail ho gaya to koi baat nahi: scripts/assets.gd ka procedural
-      # fallback use hota hai aur game PHIR BHI banta hai (fail-soft).
-      # NOTE: ye step "Project import" se PEHLE hona zaroori hai — import ke waqt hi
+      # Asset pipeline (teen hisse, teeno fail-soft):
+      #   7c) purane Kenney nature models (optional extra — net na ho to skip)
+      #   7d) repo me pade Quaternius FBX -> GLB convert (tools/fbx2glb.py, pure python)
+      #       Godot 4 .fbx import NAHI kar sakta, isliye conversion build ke waqt hoti hai.
+      #   7e) bane hue .glb ko check karo (tools/glbcheck.py)
+      # Kuch bhi fail ho to koi baat nahi: scripts/assets.gd ka procedural fallback
+      # chalta hai aur game PHIR BHI banta hai.
+      # NOTE: ye steps "Project import" se PEHLE hone zaroori hain — import ke waqt hi
       # Godot in .glb files ko padhta hai.
       - name: "7b) Cache: downloaded CC0 assets"
         uses: actions/cache@v4
@@ -217,6 +220,43 @@ jobs:
             echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
           fi
 
+      # ---- 7d) FBX -> GLB conversion (repo me pade CC0 models) ----
+      # Godot 4 me FBX importer nahi hai — isliye pehle python se convert karte hain.
+      # tools/fbx2glb.py pure stdlib hai (koi pip install nahi, koi binary download nahi).
+      - name: "7d) FBX -> GLB conversion (Quaternius CC0 models)"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          FBX_COUNT=$(find assets/downloaded -name '*.fbx' 2>/dev/null | wc -l)
+          echo "repo me FBX files: $FBX_COUNT" | tee -a "$DIAG"
+          if [ "$FBX_COUNT" -eq 0 ]; then
+            echo "::warning::koi .fbx nahi mila -> poora game procedural models pe chalega" | tee -a "$DIAG"
+            exit 0
+          fi
+
+          python3 tools/fbx2glb.py assets/downloaded --report build/glb-report.json 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
+
+          GLB_COUNT=$(find assets/downloaded -name '*.glb' | wc -l)
+          echo "convert ho gaye: $GLB_COUNT glb" | tee -a "$DIAG"
+          du -sh assets/downloaded/* 2>/dev/null | tee -a "$DIAG" || true
+          if [ "$GLB_COUNT" -eq 0 ]; then
+            echo "::warning::ek bhi glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
+          fi
+
+      # ---- 7e) .glb sanity check (header/accessors/index range) ----
+      - name: "7e) GLB sanity check"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          python3 tools/glbcheck.py assets/downloaded 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::kuch glb theek nahi hai (convert dobara chalega agli baar)" | tee -a "$DIAG"
+
       - name: "8) Project import (headless)"
         run: |
           set -euo pipefail
@@ -259,6 +299,24 @@ jobs:
           fi
           echo "Import log saaf hai ✔ (koi parse/load error nahi)"
 
+      # ---- 8d) Game ka asset selftest (headless, 5-10 second) ----
+      # scripts/selftest.gd: loader + 28 weapons + character + nature + vehicle + fail-soft.
+      # Kuch bhi galat ho to ye step RED ho jata hai — silent kharab APK nahi banega.
+      - name: "8d) Asset selftest (downloaded models + procedural fallback)"
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          OUT=$(godot --headless --path . --quit-after 600 scenes/selftest.tscn 2>&1)
+          echo "$OUT" | tee -a "$DIAG"
+
+          if echo "$OUT" | grep -q "SELFTEST_EXIT_OK"; then
+            echo "::notice::Asset selftest PASS (downloaded + procedural dono chal rahe hain)"
+          else
+            echo "::error::Asset selftest FAIL — upar dekho kaunsa check toota (game phir bhi procedural pe banta rahega)"
+            exit 1
+          fi
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail
@@ -267,6 +325,24 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release Android 2>&1 | tee -a "$DIAG"
           ls -lh build/ | tee -a "$DIAG" || true
+
+      # GitHub ke run page pe asset summary (phone se dekhne me aasan)
+      - name: "9b) Asset summary (run page pe)"
+        if: always()
+        run: |
+          {
+            echo "## Asset summary"
+            echo ""
+            echo '| folder | files | size |'
+            echo '|---|---|---|'
+            for d in weapons nature characters vehicles; do
+              f=$(find "assets/downloaded" -path "*$d*" -name '*.glb' 2>/dev/null | wc -l)
+              s=$(du -sh "$(find assets/downloaded -maxdepth 1 -iname "$d" -type d | head -1)" 2>/dev/null | cut -f1)
+              echo "| $d | $f glb | ${s:-0} |"
+            done
+            echo ""
+            echo "FBX -> GLB converter: tools/fbx2glb.py | checker: tools/glbcheck.py"
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: "10) APK ka naam pakka karo"
         run: |

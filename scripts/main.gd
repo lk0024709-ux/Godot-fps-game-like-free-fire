@@ -1,10 +1,16 @@
 extends Node3D
 ##
 ## Main (game manager)
-## - Arena banata hai: zameen + chaaron taraf deewar + cover boxes (sab code se,
-##   koi asset nahi)
+## - Arena banata hai: zameen + chaaron taraf deewar + cover boxes (sab code se)
+## - Nature scatter karta hai: ZONES ke hisaab se ped/patthar/jhaadi/ghaas/plant
+##   (downloaded CC0 models, aur na mile to procedural — dekho scripts/assets.gd)
+## - ZONES ke fixed spots pe gaadiyaan (vehicles) rakhta hai (abhi static decoration)
 ## - Enemies spawn karta hai
 ## - Score (+10 per kill) aur Game Over handle karta hai
+##
+## ZONES (Phase 3): gameplay ke saare zones ki jagah is ek table me hai — angle (compass
+## direction), kaunsa prop kitna, aur gaadi kahan. Tum bina code padhe numbers badal
+## sakte ho: angle/weights/vehicles. angle 0 = -Z (uttar), 90 = +X (purab), etc.
 ##
 
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
@@ -23,10 +29,25 @@ const Assets := preload("res://scripts/assets.gd")
 ## Ye seed fix hai — isliye har baar wahi ped/patthar/ghaas wahi jagah pe ugte hain.
 ## Badal ke dekho: pura layout badal jayega (par phir bhi deterministic rahega).
 @export var nature_seed: int = 20241015
-@export var tree_count: int = 14                 ## ped (deewar ke paas patti me)
-@export var rock_count: int = 10                 ## patthar
-@export var bush_count: int = 12                 ## jhaadiyaan
-@export var grass_count: int = 26                ## ghaas ke guchhe (inme collision nahi hota)
+@export var tree_count: int = 26                 ## ped (deewar ke paas patti me)
+@export var rock_count: int = 18                 ## patthar
+@export var bush_count: int = 14                 ## jhaadiyaan
+@export var grass_count: int = 40                ## ghaas ke guchhe (inme collision nahi hota)
+@export var plant_count: int = 20                ## plant / phool (inme bhi collision nahi)
+## Performance cap (spec): isse zyada ped/patthar kabhi nahi lagenge. Cap lagna to
+## console me warning aati hai — TUNING ke liye numbers yahin badlo.
+@export var max_trees: int = 80
+@export var max_rocks: int = 50
+## 40 se zyada grass/plant ho to MultiMeshInstance3D use hota hai (ek draw call)
+@export var multimesh_threshold: int = 40
+## Patti: props deewar ke kitne paas lage (1.0 = deewar tak, 0.7 = thoda andar tak)
+@export var props_band_factor: float = 0.80
+
+@export_group("Vehicles")
+@export var vehicle_count: int = 6               ## kitni gaadiyaan (zones ke fixed spots pe)
+@export var vehicle_collision: bool = true       ## aar-paar jaane wale gaadi pe box collision
+## NOTE: gaadi me baithna/chadhna (enter-exit physics) Phase F ka kaam hai —
+## abhi ye sirf static decoration hai (takkar hoti hai, par chal nahi sakte).
 
 ## Neeche wala layout isi 40x40 ke hisaab se likha hai. arena_size badloge to
 ## sab kuch (deewarein + cover boxes + spawn ghere) automatically scale ho jayega.
@@ -40,6 +61,81 @@ const ARENA_REFERENCE: float = 40.0
 
 var score: int = 0
 var game_over: bool = false
+
+# ------------------------------------------------------------------ ZONES ----
+# Game ke 8 zones. `angle` = arena ke center se compass direction (0 = -Z, 90 = +X).
+# `w_*` = us zone me prop kitna lagega (0 = bilkul nahi). Ye weight global count ko
+# baant dete hain, isliye tree_count/rock_count badalne se sirf kul ginti badalti hai.
+#
+#   Himvana  (barf)      : sirf pine
+#   Marusthal(registan)   : sirf patthar
+#   Kanak, Khet (khet)    : halke pine + ghaas
+#   Haritvan (jungle)     : ghane pine + ghaas + plant
+#   Haveli                : 2-3 pine + ghaas
+#   Chowk, Samudra        : default mix (patthar zyada, ped kam)
+const ZONES := {
+	"Chowk": {
+		"angle": -45.0, "spread": 44.0,
+		"w_tree": 0.5, "w_rock": 1.2, "w_grass": 0.2, "w_plant": 0.2,
+		"vehicles": ["taxi", "sedan"],
+	},
+	"Haveli": {
+		"angle": 0.0, "spread": 44.0,
+		"w_tree": 0.6, "w_rock": 0.3, "w_grass": 0.9, "w_plant": 0.4,
+		"vehicles": ["cop_car"],
+	},
+	"Himvana": {
+		"angle": 45.0, "spread": 44.0,
+		"w_tree": 1.4, "w_rock": 0.0, "w_grass": 0.0, "w_plant": 0.0,
+		"vehicles": [],
+	},
+	"Kanak": {
+		"angle": 90.0, "spread": 44.0,
+		"w_tree": 0.6, "w_rock": 0.3, "w_grass": 1.0, "w_plant": 0.7,
+		"vehicles": ["suv"],
+	},
+	"Samudra": {
+		"angle": 135.0, "spread": 44.0,
+		"w_tree": 0.3, "w_rock": 1.0, "w_grass": 0.1, "w_plant": 0.2,
+		"vehicles": ["sports"],
+	},
+	"Marusthal": {
+		"angle": 180.0, "spread": 44.0,
+		"w_tree": 0.0, "w_rock": 1.6, "w_grass": 0.0, "w_plant": 0.0,
+		"vehicles": ["sedan_2"],
+	},
+	"Khet": {
+		"angle": -135.0, "spread": 44.0,
+		"w_tree": 0.5, "w_rock": 0.2, "w_grass": 1.0, "w_plant": 0.8,
+		"vehicles": [],
+	},
+	"Haritvan": {
+		"angle": -90.0, "spread": 44.0,
+		"w_tree": 1.8, "w_rock": 0.4, "w_grass": 1.6, "w_plant": 1.6,
+		"vehicles": [],
+	},
+}
+
+## Har zone ke prop ka rang (procedural fallback pe lagta hai; downloaded models
+## apne asli rang rakhte hain). Desert = bhura, barf = dhulmil safed.
+const ZONE_TINT := {
+	"Himvana": Color(0.78, 0.84, 0.88),
+	"Marusthal": Color(0.72, 0.62, 0.42),
+	"Chowk": Color(0.72, 0.66, 0.52),
+	"Samudra": Color(0.60, 0.72, 0.78),
+}
+
+## Vehicle ke rang (procedural fallback ke liye) — downloaded model apna rang rakhta hai
+const VEHICLE_COLORS := {
+	"cop_car": Color(0.18, 0.20, 0.30),
+	"taxi": Color(0.88, 0.72, 0.16),
+	"suv": Color(0.42, 0.46, 0.44),
+	"sedan": Color(0.60, 0.62, 0.68),
+	"sedan_2": Color(0.52, 0.28, 0.24),
+	"sports": Color(0.70, 0.26, 0.16),
+	"sports_2": Color(0.24, 0.42, 0.66),
+	"default": Color(0.55, 0.57, 0.60),
+}
 
 ## Cover / deewar ka layout: [position, size, colour]
 var _obstacles := [
@@ -67,6 +163,7 @@ var _obstacles := [
 
 func _ready() -> void:
 	_build_arena()
+	_spawn_vehicles()
 
 	# player ko HUD aur bullet-container de do
 	player.hud = hud
@@ -132,7 +229,7 @@ func _build_arena() -> void:
 
 # ------------------------------------------------------------- nature props --
 
-## Ped / patthar / jhaadi / ghaas ko maidan ke kinare wali patti me bikher deta hai.
+## Ped / patthar / jhaadi / ghaas / plant ko ZONES ke hisaab se bikher deta hai.
 ##
 ## Deterministic: `nature_seed` fix hai, isliye har run me SAME layout banta hai.
 ## Saare props deewar ke paas wali patti me rakhe jaate hain (beech ka khel ka maidan
@@ -147,7 +244,6 @@ func _scatter_nature() -> void:
 	rng.seed = nature_seed
 
 	var inner_radius: float = arena_size * 0.5 - 1.3        # deewar se thoda andar
-	var band_min: float = inner_radius * 0.86               # ped/patthar isi patti me
 	# chhote maidan me itne hi props lagao (warna bhare-bhare lagega)
 	var area_scale: float = maxf(0.3, arena_scale * arena_scale)
 
@@ -155,43 +251,181 @@ func _scatter_nature() -> void:
 	container.name = "Nature"
 	add_child(container)
 
-	var kinds := {
-		"tree": [tree_count, 0.95, 1.35, 1.0],
-		"rock": [rock_count, 0.85, 1.30, 1.0],
-		"bush": [bush_count, 0.90, 1.40, 1.0],
-		"grass": [grass_count, 0.85, 1.55, 0.62],   # ghaas thodi andar tak bhi aa sakti hai
-	}
+	# ---- prop types: kitne (cap ke saath), size range, aur zone-weights ka naam ----
+	var types := [
+		# kind,      count,            min,  max,  weight-key
+		["tree", tree_count, 0.95, 1.35, "w_tree"],
+		["rock", rock_count, 0.85, 1.30, "w_rock"],
+		["grass", grass_count, 0.85, 1.55, "w_grass"],
+		["plant", plant_count, 0.85, 1.35, "w_plant"],
+	]
 
-	for kind in ["tree", "rock", "bush", "grass"]:
-		var spec: Array = kinds[kind]
-		var total: int = maxi(4, int(float(spec[0]) * area_scale))
-		var min_scale: float = float(spec[1])
-		var max_scale: float = float(spec[2])
-		var band_factor: float = float(spec[3])
+	var placed := {}
+	var total_placed := 0
+	for entry in types:
+		var kind: String = str(entry[0])
+		var wanted: int = int(float(int(entry[1])) * area_scale)
+		var min_scale: float = float(entry[2])
+		var max_scale: float = float(entry[3])
+		var weight_key: String = str(entry[4])
 
-		for i in total:
-			var angle := rng.randf() * TAU
-			var radius := rng.randf_range(inner_radius * band_factor, inner_radius)
-			var prop: Node3D = _make_prop(kind, i % 5, rng.randf_range(min_scale, max_scale) * arena_scale)
-			if prop == null:
-				continue
-			prop.position = Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
-			prop.rotation.y = rng.randf() * TAU      # halka ghumav, natural lage
-			container.add_child(prop)
+		# ---- performance caps (spec: 80 trees, 50 rocks) ----
+		var cap := 0
+		if kind == "tree":
+			cap = max_trees
+		elif kind == "rock":
+			cap = max_rocks
+		if cap > 0 and wanted > cap:
+			push_warning("Nature: %s ka cap lag gaya (%d -> %d) — max_%ss badhao to aur lagenge"
+					% [kind, wanted, cap, kind])
+			wanted = cap
+
+		# ---- zone weights se hissa batao (weight 0 = us zone me kuch nahi) ----
+		var assignments := _distribute(wanted, weight_key)
+		var counter := 0
+		for zone_name in assignments:
+			var zone_count: int = int(assignments[zone_name])
+			var zone: Dictionary = ZONES[zone_name]
+			for i in zone_count:
+				var pos: Vector3 = _pick_prop_position(zone, inner_radius, rng)
+				var scale_f: float = rng.randf_range(min_scale, max_scale) * arena_scale
+				var variant := counter % 5
+				var prop: Node3D = _make_prop(kind, variant, scale_f, zone_name)
+				counter += 1
+				if prop == null:
+					continue
+				prop.position = pos
+				prop.rotation.y = rng.randf() * TAU      # halka ghumav, natural lage
+				container.add_child(prop)
+				total_placed += 1
+		placed[kind] = counter
+
+	# ---- ek line summary (CI / phone log me kaam aati hai) ----
+	print("Nature: %d props placed %s" % [total_placed, placed])
 
 
-## Ek nature prop banao (kind ke hisaab se assets.gd ka function)
-func _make_prop(kind: String, variant: int, scale_f: float) -> Node3D:
+## Kisi zone me ek prop ki jagah (center se `zone.angle` wali dish me, thoda bikhra hua)
+func _pick_prop_position(zone: Dictionary, inner_radius: float, rng: RandomNumberGenerator) -> Vector3:
+	var center_angle: float = deg_to_rad(float(zone.get("angle", 0.0)))
+	var half: float = arena_size * 0.5
+	var band := clampf(props_band_factor, 0.3, 0.98)
+	var spread_deg: float = float(zone.get("spread", 44.0))
+	for attempt in 12:
+		var angle: float = center_angle + deg_to_rad(rng.randf_range(-spread_deg, spread_deg))
+		var radius: float = rng.randf_range(inner_radius * band, inner_radius)
+		var pos := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+		# deewar ke andar hi raho (chhote maidan me bhi safe)
+		pos.x = clampf(pos.x, -half + 1.0, half - 1.0)
+		pos.z = clampf(pos.z, -half + 1.0, half - 1.0)
+		# beech ka maidan khula rakho (spawn ring se bahar)
+		if Vector2(pos.x, pos.z).length() < arena_size * 0.40:
+			continue
+		return pos
+	# 12 koshish me na mila to ring pe hi rakh do
+	var fallback_angle := center_angle + deg_to_rad(rng.randf_range(-spread_deg, spread_deg))
+	return Vector3(cos(fallback_angle) * inner_radius, 0.0, sin(fallback_angle) * inner_radius)
+
+
+## `total` ko zones me weight ke hisaab se baanto (weight 0 wale zones skip).
+## Wapas: {zone_name: count}
+func _distribute(total: int, weight_key: String) -> Dictionary:
+	var weights := {}
+	var sum := 0.0
+	for zone_name in ZONES:
+		var w: float = float(ZONES[zone_name].get(weight_key, 0.0))
+		if w <= 0.0:
+			continue
+		weights[zone_name] = w
+		sum += w
+
+	var out := {}
+	if weights.is_empty() or total <= 0:
+		return out
+
+	var names := weights.keys()
+	names.sort()                       # deterministic order
+	var left := total
+	for i in names.size():
+		var zone_name: String = str(names[i])
+		if i == names.size() - 1:
+			out[zone_name] = left      # aakhri zone ko bacha hua sab de do
+			break
+		var count := int(round(float(total) * float(weights[zone_name]) / sum))
+		count = mini(count, left)
+		out[zone_name] = count
+		left -= count
+	return out
+
+
+## Ek nature prop banao. Pehle downloaded model (assets.gd se), warna procedural.
+## Zone ke hisaab se tint bhi lagta hai (Himvana safed-ish, Marusthal bhura).
+func _make_prop(kind: String, variant: int, scale_f: float, zone_name: String = "") -> Node3D:
+	var prop: Node3D = null
 	match kind:
 		"tree":
-			return Assets.tree(scale_f, variant)
+			prop = Assets.tree(scale_f, variant)
 		"rock":
-			return Assets.rock(scale_f, variant)
+			prop = Assets.rock(scale_f, variant)
 		"bush":
-			return Assets.bush(scale_f, variant)
+			prop = Assets.bush(scale_f, variant)
+		"plant":
+			prop = Assets.plant(scale_f, variant)
 		"grass":
-			return Assets.grass_tuft(scale_f, variant)
-	return null
+			prop = Assets.grass_tuft(scale_f, variant)
+		_:
+			prop = null
+
+	if prop != null and ZONE_TINT.has(zone_name):
+		Assets.tint_grey(prop, ZONE_TINT[zone_name])
+	return prop
+
+
+# --------------------------------------------------------------- vehicles ----
+
+## ZONES ke fixed spots pe gaadiyaan rakhta hai (spec: Chowk taxi+sedan, Haveli cop_car,
+## Samudra sports, Kanak suv, Marusthal sedan_2).
+##
+## Abhi ye sirf *static decoration* hai — collision ke saath khadi rehti hain,
+## andar baithna/chalana Phase F ka kaam hai. Model na mile to assets.gd ki
+## procedural gaadi lagti hai (game kabhi rukta nahi).
+func _spawn_vehicles() -> void:
+	var container := Node3D.new()
+	container.name = "Vehicles"
+	add_child(container)
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = nature_seed + 7
+
+	var count := 0
+	for zone_name in ZONES:
+		if count >= vehicle_count:
+			break
+		var zone: Dictionary = ZONES[zone_name]
+		for model_name in zone.get("vehicles", []):
+			if count >= vehicle_count:
+				break
+			var body := _make_vehicle(str(model_name))
+			if body == null:
+				continue
+			var angle: float = deg_to_rad(float(zone.get("angle", 0.0)))
+			var radius: float = arena_size * 0.33
+			body.position = Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+			body.rotation.y = angle + rng.randf_range(-0.5, 0.5)
+			if not vehicle_collision:
+				Assets.disable_collision(body)
+			container.add_child(body)
+			count += 1
+
+	print("Vehicles: %d placed" % count)
+
+
+## Ek gaadi: downloaded model (collision ke saath) ya procedural fallback
+func _make_vehicle(model_name: String) -> StaticBody3D:
+	var body := Assets.build_vehicle_model(model_name)
+	if body == null:
+		var color: Color = VEHICLE_COLORS.get(model_name, VEHICLE_COLORS["default"])
+		body = Assets.fallback_vehicle(model_name, color)
+	return body
 
 
 func _add_box(box_pos: Vector3, box_size: Vector3, color: Color) -> void:

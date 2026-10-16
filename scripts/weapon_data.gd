@@ -7,6 +7,10 @@ extends RefCounted
 ##   name, shape, damage, pellets, fire_rate, ammo, auto, reload,
 ##   body, accent, spread, bullet_speed, recoil
 ##
+## "model" = downloaded CC0 model ka naam (assets/downloaded/weapons/ me se). Ye mile to
+## weapon us model se banta hai (rang + size + muzzle node assets.gd me lagte hain), warna
+## "shape" wala procedural model. Pistol ke models upload me nahi hain -> "model" khali.
+##
 ## NOTE: shape sirf 5 me se ek ho sakta hai -> assets.gd wahi 5 base models banata hai.
 ##
 
@@ -34,6 +38,49 @@ const BLUE := Color(0.16, 0.32, 0.62)
 const DARK_BLUE := Color(0.14, 0.18, 0.28)
 const RED := Color(0.62, 0.14, 0.12)
 const CYAN := Color(0.25, 0.62, 0.68)
+
+
+## Har weapon ka downloaded model + uska size (scale). Model ke naam asset_loader.gd
+## samajhta hai: "ar_5" -> AssaultRifle_5.glb, "smg_2" -> SubmachineGun_2.glb,
+## "bullpup_1" -> Bullpup_1.glb, "sniper_1" -> SniperRifle_1.glb, "shotgun_1" -> Shotgun_1.glb.
+##
+## 11 rifles ke liye 11 alag model (spec), SMG me 5 model 8 guns ke liye
+## (Bizon/Skorpion/Vector repeat hote hain — sirf scale + colour badalta hai).
+const WEAPON_MODELS := {
+	# ---- rifles (11 weapons -> 11 models) ----
+	"AK": {"model": "ar_5"},              # wood stock wala
+	"M4A1": {"model": "ar_4"},            # black, alag look
+	"SCAR": {"model": "ar_6"},
+	"Groza": {"model": "bullpup_1"},
+	"FAMAS": {"model": "bullpup_2"},
+	"AUG": {"model": "bullpup_3"},
+	"M7": {"model": "ar_7"},
+	"XM8": {"model": "ar_8"},
+	"Parafal": {"model": "ar_3"},
+	"AN94": {"model": "ar_2"},
+	"Kingfisher": {"model": "ar_1"},
+	# ---- SMGs (8 weapons -> 5 models, 3 repeat) ----
+	"MP40": {"model": "smg_1", "scale": 1.0},
+	"MP5": {"model": "smg_2", "scale": 0.9},
+	"UMP": {"model": "smg_3", "scale": 1.1},
+	"P90": {"model": "smg_4", "scale": 1.0},
+	"Thompson": {"model": "smg_5", "scale": 1.2},
+	"Bizon": {"model": "smg_1", "scale": 1.3},      # repeat
+	"Skorpion": {"model": "smg_3", "scale": 0.7},   # repeat
+	"Vector": {"model": "smg_4", "scale": 0.9},     # repeat
+	# ---- snipers (3 -> 3) ----
+	"Kar98k": {"model": "sniper_1"},
+	"AWM": {"model": "sniper_2"},
+	"M82B": {"model": "sniper_3"},
+	# ---- shotguns (3 -> 3) ----
+	"M1014": {"model": "shotgun_1"},
+	"MAG-7": {"model": "shotgun_2"},
+	"SPAS12": {"model": "shotgun_3"},
+	# ---- pistols: models upload me nahi hain -> procedural (shape = pistol) ----
+	"Desert Eagle": {"model": ""},
+	"USP": {"model": ""},
+	"M500": {"model": ""},
+}
 
 
 ## Poori list (index 0..27). Yahi order game me aur gun-picker me dikhta hai.
@@ -113,6 +160,9 @@ static func _gun(weapon_name: String, shape: String, damage: float, fire_rate: f
 		_:
 			pass
 
+	# downloaded model + uski size (agar table me hai)
+	var entry: Dictionary = WEAPON_MODELS.get(weapon_name, {})
+
 	return {
 		"name": weapon_name,
 		"shape": shape,
@@ -127,6 +177,8 @@ static func _gun(weapon_name: String, shape: String, damage: float, fire_rate: f
 		"spread": spread,
 		"bullet_speed": speed,
 		"recoil": recoil,
+		"model": String(entry.get("model", "")),      # "" = procedural fallback
+		"scale": float(entry.get("scale", 1.0)),      # SMG repeats ka size farq
 	}
 
 
@@ -144,3 +196,12 @@ static func short_tag(shape: String) -> String:
 		SHOTGUN:
 			return "SHG"
 	return "?"
+
+
+## Kitne weapons ke paas downloaded model hai (debug / CI summary ke liye)
+static func model_count() -> int:
+	var n := 0
+	for entry in WEAPON_MODELS.values():
+		if not String(entry.get("model", "")).is_empty():
+			n += 1
+	return n
