@@ -287,6 +287,11 @@ jobs:
           set -uo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
+
+          # pehle cross-file reference check (gdlint isko nahi pakadta, Godot pakadta hai)
+          python3 tools/gdcheckrefs.py --params 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::gdcheckrefs ne kuch shak wali cheez batayi (neeche Godot ka parse gate decide karega)"
+
           bad=0
           for f in scripts/*.gd; do
             out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1)

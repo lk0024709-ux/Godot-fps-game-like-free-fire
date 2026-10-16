@@ -706,9 +706,29 @@ def build_primitives(builder, verts, polys, normals, uvs, slots, mat_ids, mat_lo
                 tri = (p[0], p[j], p[j + 1])
                 ids = (base_pv, base_pv + j, base_pv + j + 1)
                 tri_idx = []
+                # face normal — jo vertices ka normal kharab/zero hai unke liye fallback
+                face_n = None
                 for vi, li in zip(tri, ids):
                     pp = xf(verts[vi])
                     nn = flat_n[li]
+                    if face_n is None:
+                        a = xf(verts[tri[1]])
+                        b = xf(verts[tri[2]])
+                        u = (a[0] - pp[0], a[1] - pp[1], a[2] - pp[2])
+                        v = (b[0] - pp[0], b[1] - pp[1], b[2] - pp[2])
+                        c = (u[1] * v[2] - u[2] * v[1],
+                             u[2] * v[0] - u[0] * v[2],
+                             u[0] * v[1] - u[1] * v[0])
+                        ln = math.sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2])
+                        face_n = (c[0] / ln, c[1] / ln, c[2] / ln) if ln > 1e-12 else (0.0, 1.0, 0.0)
+                        if winding_flip:
+                            face_n = (-face_n[0], -face_n[1], -face_n[2])
+                    # normal ko sanitize karo: NaN/inf/zero length ho to face normal
+                    ln = math.sqrt(nn[0] * nn[0] + nn[1] * nn[1] + nn[2] * nn[2])
+                    if not (ln > 1e-6) or not all(math.isfinite(x) for x in nn):
+                        nn = face_n      # Godot warna "non-finite normal" warning deta hai
+                    else:
+                        nn = (nn[0] / ln, nn[1] / ln, nn[2] / ln)
                     key = (round(pp[0], 5), round(pp[1], 5), round(pp[2], 5),
                            round(nn[0], 3), round(nn[1], 3), round(nn[2], 3))
                     base = weld.get(key)

@@ -850,7 +850,7 @@ static func _try_downloaded(kind: String, variant: int, scale_f: float, node_nam
 static func fallback_vehicle(_model_name: String, body_color: Color) -> StaticBody3D:
 	var root := StaticBody3D.new()
 	root.name = "VehicleFallback"
-	root.collision_layer = collision_layer_bits
+	root.collision_layer = 1        # layer 1 = duniya (goli/enemy isi se takrate hain)
 
 	var body_mat := _mat(body_color, 0.35, 0.45)
 	var glass_mat := _mat(Color(0.10, 0.14, 0.20), 0.2, 0.25)
