@@ -7,9 +7,10 @@ extends RefCounted
 ##   name, shape, damage, pellets, fire_rate, ammo, auto, reload,
 ##   body, accent, spread, bullet_speed, recoil
 ##
-## "model" = downloaded CC0 model ka naam (assets/downloaded/weapons/ me se). Ye mile to
-## weapon us model se banta hai (rang + size + muzzle node assets.gd me lagte hain), warna
-## "shape" wala procedural model. Pistol ke models upload me nahi hain -> "model" khali.
+## "model" = downloaded CC0 model ka naam (assets/downloaded_obj/Weapons/ me se, CI usko
+## .glb bana deta hai). Ye mile to weapon us model se banta hai (rang + size + muzzle node
+## assets.gd me lagte hain), warna "shape" wala procedural model. Pistols ke models bhi
+## ab maujood hain (pistol_1..6 / revolver_1..5 me se 3 use hote hain).
 ##
 ## NOTE: shape sirf 5 me se ek ho sakta hai -> assets.gd wahi 5 base models banata hai.
 ##
@@ -42,29 +43,40 @@ const CYAN := Color(0.25, 0.62, 0.68)
 
 ## Har weapon ka downloaded model + uska size (scale). Model ke naam asset_loader.gd
 ## samajhta hai: "ar_5" -> AssaultRifle_5.glb, "smg_2" -> SubmachineGun_2.glb,
-## "bullpup_1" -> Bullpup_1.glb, "sniper_1" -> SniperRifle_1.glb, "shotgun_1" -> Shotgun_1.glb.
+## "bullpup_1" -> Bullpup_1.glb, "sniper_1" -> SniperRifle_1.glb, "shotgun_1" -> Shotgun_1.glb,
+## "pistol_1" -> Pistol_1.glb, "revolver_1" -> Revolver_1.glb.
+##
+## Weapons ke source files (OBJ + MTL) `assets/downloaded_obj/Weapons/` me hain. CI unhe
+## `tools/obj2glb.py` se `assets/models/weapons/*.glb` me convert karta hai (workflow step
+## "7d-obj") — Godot sirf wahi .glb padhta hai. Koi model na mile to wahi gun procedural
+## shape se ban jaati hai (game kabhi rukta nahi).
 ##
 ## 11 rifles ke liye 11 alag model (spec), SMG me 5 model 8 guns ke liye
 ## (Bizon/Skorpion/Vector repeat hote hain — sirf scale + colour badalta hai).
 const WEAPON_MODELS := {
-	# ---- rifles (11 weapons -> 11 models) ----
-	"AK": {"model": "ar_5"},              # wood stock wala
-	"M4A1": {"model": "ar_4"},            # black, alag look
-	"SCAR": {"model": "ar_6"},
+	# ---- rifles (11 weapons -> 11 alag models) ----
+	# Rifle models ka asli roop (renders se check kiya, dekho docs/model-integration-report.md):
+	#   ar_1 = wood-stock rifle      ar_2 = AK classic     ar_3 = AK variant
+	#   ar_4 = wire-stock rifle      ar_5 = AKM (wood stock)
+	#   ar_6 = M4/AR-15 style        ar_7 = SCAR style     ar_8 = G36/XM8 style
+	#   ar_9 = compact carbine       bullpup_1..3 = AUG/FAMAS/Groza jaise bullpup
+	"AK": {"model": "ar_5"},              # wood stock wala AKM
+	"M4A1": {"model": "ar_6"},            # AR-15 / M4 look (flat-top rail)
+	"SCAR": {"model": "ar_7"},            # modern carbine look
+	"M7": {"model": "ar_9"},              # compact carbine
+	"XM8": {"model": "ar_8"},             # G36/XM8 jaisa shape
 	"Groza": {"model": "bullpup_1"},
 	"FAMAS": {"model": "bullpup_2"},
 	"AUG": {"model": "bullpup_3"},
-	"M7": {"model": "ar_7"},
-	"XM8": {"model": "ar_8"},
-	"Parafal": {"model": "ar_3"},
-	"AN94": {"model": "ar_2"},
-	"Kingfisher": {"model": "ar_1"},
-	# ---- SMGs (8 weapons -> 5 models, 3 repeat) ----
-	"MP40": {"model": "smg_1", "scale": 1.0},
-	"MP5": {"model": "smg_2", "scale": 0.9},
-	"UMP": {"model": "smg_3", "scale": 1.1},
-	"P90": {"model": "smg_4", "scale": 1.0},
-	"Thompson": {"model": "smg_5", "scale": 1.2},
+	"Parafal": {"model": "ar_1"},         # wood-stock rifle
+	"AN94": {"model": "ar_2"},            # AK classic
+	"Kingfisher": {"model": "ar_4"},      # wire-stock rifle
+	# ---- SMGs (8 weapons -> 5 models, 3 repeat: sirf scale + colour badalta hai) ----
+	"MP40": {"model": "smg_2", "scale": 1.0},       # tube stock wala
+	"MP5": {"model": "smg_1", "scale": 1.0},
+	"UMP": {"model": "smg_4", "scale": 1.1},
+	"P90": {"model": "smg_3", "scale": 1.0},        # foregrip wala PDW
+	"Thompson": {"model": "smg_5", "scale": 1.2},   # lamba receiver
 	"Bizon": {"model": "smg_1", "scale": 1.3},      # repeat
 	"Skorpion": {"model": "smg_3", "scale": 0.7},   # repeat
 	"Vector": {"model": "smg_4", "scale": 0.9},     # repeat
@@ -76,10 +88,10 @@ const WEAPON_MODELS := {
 	"M1014": {"model": "shotgun_1"},
 	"MAG-7": {"model": "shotgun_2"},
 	"SPAS12": {"model": "shotgun_3"},
-	# ---- pistols: models upload me nahi hain -> procedural (shape = pistol) ----
-	"Desert Eagle": {"model": ""},
-	"USP": {"model": ""},
-	"M500": {"model": ""},
+	# ---- pistols (3 -> 3, OBJ pack me Pistol/Revolver files hain) ----
+	"Desert Eagle": {"model": "pistol_6"},   # sabse bada pistol
+	"USP": {"model": "pistol_1"},            # compact pistol
+	"M500": {"model": "revolver_1"},         # revolver
 }
 
 

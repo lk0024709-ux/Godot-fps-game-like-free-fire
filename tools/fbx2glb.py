@@ -1130,6 +1130,8 @@ def main(argv):
     ap.add_argument("--out-root", default=None,
                     help="<out-root>/<category>/<file>.glb — category source folder se aata hai")
     ap.add_argument("--suffix", default="")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="jahan .glb pehle se hai wahan chhod do (OBJ step ki output na bigde)")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--report", default="", help="likhit JSON report ka path")
     args = ap.parse_args(argv)
@@ -1153,6 +1155,9 @@ def main(argv):
             out_dir = args.out_dir or os.path.dirname(f)
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, os.path.splitext(os.path.basename(f))[0] + args.suffix + ".glb")
+        if args.skip_existing and os.path.exists(out_path):
+            ok += 1                                   # pehle se bana hua (jaise OBJ se) — chhod do
+            continue
         try:
             data, report = convert(f, args.kind)
         except Exception as exc:                       # pragma: no cover

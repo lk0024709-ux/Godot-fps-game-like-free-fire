@@ -144,8 +144,10 @@ scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, g
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
 scenes/selftest.tscn           # Selftest scene (assets check karta hai, phone pe bhi chala sakte ho)
 
-assets/downloaded/             # CC0 model ke ASLI source files (FBX) — .gdignore pada hai, Godot inhe scan nahi karta
+assets/downloaded/             # FBX source (nature/characters/vehicles) — .gdignore pada hai, Godot inhe scan nahi karta
+assets/downloaded_obj/Weapons/ # OBJ + MTL source (40 guns) — .gdignore pada hai (Godot scan nahi karta)
 assets/models/                 # CI ne banaye .glb (Godot sirf yahin se model uthata hai) — commit NAHI hote
+tools/obj2glb.py               # OBJ+MTL -> GLB converter (weapons ke liye, pure python)
 tools/fbx2glb.py               # FBX 7.x -> GLB converter (pure python, koi pip/numpy nahi)
 tools/glbcheck.py              # .glb files ki jaanch (header/accessor/normals) — CI step 7e
 tools/gdcheckrefs.py           # Har Helper.func() call aur parameter count ki cross-check — CI step 8b
@@ -197,19 +199,24 @@ Game me models **3 layer** se aate hain — upar wala mile to wahi, warna neeche
 1. **Repo me pade CC0 source files** — `assets/downloaded/<category>/` (Quaternius ke
    `.fbx`). Is folder me `.gdignore` pada hai, isliye **Godot inhe scan nahi karta**
    (Godot 4 me FBX importer hai hi nahi, aur bade packs pe uska import scan hang ho jata hai).
-2. **CI ka conversion + import** — build ke waqt step **7d** `tools/fbx2glb.py` se
-   sabhi FBX ko `.glb` me badalta hai aur `assets/models/<category>/` me daalta hai.
-   **Godot sirf yahin se** models padhta hai. Ye `.glb` commit NAHI hote — har build
-   pe khud ban jate hain (aur cache hote hain, isliye build tezz rehta hai).
-   Step **7e** har `.glb` ko check karta hai (`glbcheck.py`), step **8d** game ka
-   apna selftest chalata hai (171 checks).
+2. **CI ka conversion + import** — build ke waqt:
+   - step **7d**: `tools/obj2glb.py` OBJ+MTL (weapons) ko `.glb` me badalta hai,
+     aur `assets/models/weapons/` me daalta hai. Ye pack me har gun ka barrel **+X**
+     taraf hota hai → converter usko **-Z** pe ghumata hai (game ko wahi chahiye),
+     aur winding bhi check karta hai (model andar se bahar na dikhe).
+   - step **7d-b**: `tools/fbx2glb.py` baaki FBX (nature/characters/vehicles) ka kaam
+     karta hai (`--skip-existing`, isliye weapons ke `.glb` OBJ se hi bante hain).
+   - **Godot sirf** `assets/models/` **se** models padhta hai. Ye `.glb` commit NAHI hote —
+     har build pe bante hain (aur cache hote hain, isliye build tezz rehta hai).
+   - step **7e** har `.glb` ko check karta hai (`glbcheck.py`), step **8d** game ka apna
+     selftest chalata hai (loader + har gun ka model/muzzle + fail-soft test).
 3. **Procedural fallback** — kuch bhi na mile (file delete, conversion fail, folder
    hi gayab), to `scripts/assets.gd` wahi model **code se** bana deta hai (box/cone/
    cylinder). Build **pass** hota hai, game chalta hai — bas shape simple ho jata hai.
 
 | Category | Kya use hota hai | Kitni files | License | Source |
 |---|---|---|---|---|
-| `weapons` | AssaultRifle1-5, AssaultRifle2-4, Bullpup-3, SMG-5, Sniper-6, Shotgun variants, (pistol ke models pack me nahi — wo procedural) | 30 | **CC0 1.0** | Quaternius (low-poly weapon pack, `assets/downloaded/weapons/License_weapons.txt`) |
+| `weapons` | **40 models**: AssaultRifle 1-5 + AssaultRifle2 1-4, Bullpup 1-3, SubmachineGun 1-5, SniperRifle 1-6, Shotgun 1-4 + SawedOff + ShortStock, Pistol 1-6, Revolver 1-5 | 40 (OBJ+MTL) | **CC0 1.0** | Quaternius (low-poly weapon pack) — source: `assets/downloaded_obj/Weapons/`, license: `assets/downloaded_obj/LICENSE.txt` |
 | `characters` | Male/Female Casual, Shirt, Suit, LongSleeve, Dress, TankTop, Alternative, + Smooth wale | 16 | **CC0 1.0** | Quaternius (`assets/downloaded/Characters/License.txt`) |
 | `vehicles` | Taxi, Cop, SUV, SportsCar, SportsCar2 | 5 | **CC0 1.0** | Quaternius (`assets/downloaded/Vehicles/License.txt`) |
 | `nature` | PineTree 1-4, Rock 1-5, Plant 1-2, Plant_Flowers, Grass Small/Large/Extruded | 15 | **CC0 1.0** | Quaternius Ultimate Platformer pack (`License_nature.txt`) |
@@ -222,7 +229,7 @@ Game me models **3 layer** se aate hain — upar wala mile to wahi, warna neeche
   ki zaroorat nahi):
   - Guns → `scripts/weapon_data.gd` ke `"model"` field (jaise `"AK": {"model": "ar_5"}`).
     Naam ka matlab `assets/models/weapons/` ki file hai: `ar_5` = `AssaultRifle_5`.
-    Pistol ke 3 guns ka `"model"` khali hai → wo procedural rehte hain.
+    Pistols bhi models use karte hain: `pistol_1` = `Pistol_1.glb`, `revolver_1` = `Revolver_1.glb`.
   - Player/enemy → `scripts/character_data.gd` (10 characters me se har ek ko `male_1`
     jaise naam mila hai; `male_1..8` / `female_1..8` ka matlab `asset_loader.gd` ki
     `CHARACTER_FILES` list se hota hai).
@@ -230,8 +237,9 @@ Game me models **3 layer** se aate hain — upar wala mile to wahi, warna neeche
     `tree()/rock()/grass_tuft()/plant()`.
   - Gaadi → `scripts/assets.gd` ke `VEHICLE_FILES` alias (`taxi`, `cop_car`, `suv`, ...).
 - **Naya model add karna ho** (OBJ/FBX/GLB — sab chalta hai, par ek baar convert karna padta hai):
-  1. File `assets/downloaded/<category>/` me upload karo (jo folder maujood hai wahi — `weapons`,
-     `nature`, `Characters`, `Vehicles`).
+  1. File upload karo: weapons ke liye `assets/downloaded_obj/Weapons/` (`.obj` + uska `.mtl`
+     dono), baaki categories ke liye `assets/downloaded/<category>/` (`weapons`, `nature`,
+     `Characters`, `Vehicles`).
   2. Naam se usko game me bulana hai: `ar_10` jaisa naam prefix se match hona chahiye. Naye
      group ka naam ho (jaise `AssaultRifle2_*`) to `scripts/asset_loader.gd` ke `SECOND_GROUP`
      ya `SPECIAL_ALIASES` me ek line add karo.

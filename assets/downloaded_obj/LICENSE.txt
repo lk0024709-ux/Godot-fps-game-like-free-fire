@@ -1,0 +1,20 @@
+ASSET LICENSES
+==============
+
+All 3D models in this directory (and subdirectories) are from 
+Quaternius (https://quaternius.com).
+
+Source packs:
+- Ultimate Gun Pack
+- Stylized Nature MegaKit
+- Ultimate Animated Characters
+- Cars Bundle
+
+Format: OBJ (converted from original)
+License: CC0 1.0 Universal (Public Domain Dedication)
+Full text: https://creativecommons.org/publicdomain/zero/1.0/
+
+You are free to use commercially, modify, and distribute.
+No attribution required (credit appreciated).
+
+Support the author: https://www.patreon.com/quaternius

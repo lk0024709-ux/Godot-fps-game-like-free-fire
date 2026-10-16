@@ -51,6 +51,8 @@ func _run_phase_1_real_assets() -> void:
 	_notes.append("loader: " + str(stats))
 	for line in Loader.report_lines():
 		print("  " + line)
+	# Weapons folder ke saare model naam (CI log me poora scan dikh jaye)
+	print("  weapons ke models: " + ", ".join(Loader.list_models("weapons")))
 	for category in Loader.CATEGORIES:
 		_check(stats.get(category, 0) >= 0, "loader: %s listing chali" % category)
 
@@ -72,6 +74,24 @@ func _run_phase_1_real_assets() -> void:
 	_notes.append("downloaded weapon models: %d/28 (baaki procedural)" % with_model)
 	if any_downloaded and with_model > 0 and not missing_models.is_empty():
 		_check(false, "ye weapon models nahi mile: " + str(missing_models))
+
+	# kaun gun kaunsa model use kar raha hai (log me saaf dikh jaye) + kitne alag models
+	var resolved := {}
+	var model_paths := {}
+	for weapon in weapons:
+		var mname := String(weapon.get("model", ""))
+		var path := Loader.find_path(mname, "weapons") if not mname.is_empty() else ""
+		print("  %-14s -> %-10s %s" % [weapon.get("name"), mname if not mname.is_empty() else "(procedural)",
+				path if not path.is_empty() else "MISSING"])
+		if not path.is_empty():
+			resolved[mname] = true
+			model_paths[path] = true
+	_notes.append("alag downloaded models: %d (28 guns me, SMG me kuch repeat hote hain)"
+			% model_paths.size())
+	if any_downloaded:
+		_check(model_paths.size() >= 22,
+				"28 guns me kam se kam 22 alag model use ho rahe hain (%d mile)" % model_paths.size())
+		_check(resolved.size() >= 25, "kam se kam 25 guns ke paas downloaded model hai (%d mile)" % resolved.size())
 
 	# har weapon ka poora model banao (downloaded ya procedural — dono chalta hai)
 	for weapon in weapons:

@@ -63,16 +63,12 @@ const VEHICLE_LENGTH := 4.4
 static func build_weapon_model(shape: String, body_color: Color, accent_color: Color,
 		model_name: String = "", scale_hint: float = 1.0, muzzle_hint: float = -1.0) -> Node3D:
 	if not model_name.is_empty():
-		var scene := Loader.load_model(model_name, "weapons")
-		if scene != null:
-			var inst := scene.instantiate()
-			if inst is Node3D:
-				var prepared := _prepare_weapon_model(inst as Node3D, shape, body_color,
-						accent_color, scale_hint, muzzle_hint)
-				if prepared != null:
-					return prepared
-			else:
-				inst.queue_free()
+		var inst := _load_weapon_instance(model_name)
+		if inst != null:
+			var prepared := _prepare_weapon_model(inst, shape, body_color,
+					accent_color, scale_hint, muzzle_hint)
+			if prepared != null:
+				return prepared
 	# ---------- procedural fallback (downloaded model nahi mila) ----------
 	match shape:
 		"pistol":
@@ -180,6 +176,22 @@ static func _prepare(node: MeshInstance3D) -> void:
 # Neeche wale functions sirf downloaded (CC0) models pe kaam karte hain.
 # Sab fail-soft hain: kuch bhi ajeeb mile to null/khali wapas, game chalta rehta hai.
 
+## Downloaded model ka node: pehle PackedScene (.glb/.gltf — CI ka converted output),
+## warna Mesh (.obj, agar Godot ne khud import kar liya ho). Kuch na mile to null
+## (caller procedural shape bana lega — game kabhi rukta nahi).
+static func _load_weapon_instance(model_name: String) -> Node3D:
+	var scene := Loader.load_model(model_name, "weapons")
+	if scene != null:
+		var node := scene.instantiate()
+		if node is Node3D:
+			return node as Node3D
+		node.queue_free()
+	var holder := Loader.load_mesh_node(model_name, "weapons")
+	if holder != null:
+		return holder
+	return null
+
+
 ## Downloaded weapon ko view-model banane ke liye taiyaar karo.
 ## Null wapas aaya to caller procedural model bana lega.
 static func _prepare_weapon_model(inst: Node3D, shape: String, body_color: Color,
@@ -197,15 +209,12 @@ static func _prepare_weapon_model(inst: Node3D, shape: String, body_color: Color
 		inst.queue_free()
 		return null
 
+	# ---- barrel -Z ki taraf hona chahiye (muzzle node usi taraf lagta hai) ----
+	if _normalize_orientation(inst, box):
+		box = _visual_aabb(inst)
+
 	# ---- size normalise: model ki lambai (Z) ko target lambai bana do ----
-	var length: float = maxf(box.size.z, 0.0001)
-	var target: float = float(WEAPON_TARGET_LENGTH.get(shape, 1.0)) * maxf(0.05, scale_hint)
-	var factor := target / length
-	# spec ka safety net: chhota model 3x, bada model 0.5x (aakhri hadd)
-	if length < 0.3:
-		factor = maxf(factor, 3.0)
-	elif length > 1.5:
-		factor = minf(factor, 0.5)
+	var factor := _normalize_scale(box, shape, scale_hint)
 
 	# ---- origin: X/Z center, aur ubhaar (Y) ko hataya — holder ke origin pe gun ka beech ----
 	# Z pe thoda AAGE (camera se door) khiska dete hain: warna poori gun ka aadha hissa
@@ -392,11 +401,54 @@ static func fallback_character(body_color: Color, accent_color: Color,
 	return root
 
 
+## Downloaded model ki asli lambai dekh kar scale factor nikalo.
+##   * target: pistol 0.30 m, smg 0.60 m, rifle 1.20 m, sniper 1.40 m, shotgun 1.10 m
+##     (per-weapon `scale` multiplier `weapon_data.gd` se aata hai — Bizon 1.3x etc.)
+##   * spec ke safety rules: model 0.3 m se chhota ho to 3x tak, 1.5 m se bada ho to
+##     aadha (aakhri hadd) — taaki koi ajeeb file poore screen ko na bhar de.
+static func _normalize_scale(box: AABB, shape: String, scale_hint: float) -> float:
+	var length: float = maxf(box.size.z, 0.0001)
+	var target: float = float(WEAPON_TARGET_LENGTH.get(shape, 1.0)) * maxf(0.05, scale_hint)
+	var factor := target / length
+	if length < 0.3:
+		factor = maxf(factor, 3.0)
+	elif length > 1.5:
+		factor = minf(factor, 0.5)
+	return factor
+
+
+## Barrel -Z pe hona chahiye. Har gun ka lambai wala axis Z hai (CI ke converter
+## tools/obj2glb.py + tools/fbx2glb.py yahi likhte hain), lekin koi haath se daala
+## gaya model ulta aa sakta hai:
+##   * lambai ka axis X/Y hai -> usko Z pe ghumao (safe, isse kuch bigadta nahi)
+##   * 180 degree ka auto-flip jaan-boojh kar NAHI karte
+## Returns: true agar model ghumana pada (tab caller AABB dobara nikaale).
+static func _normalize_orientation(inst: Node3D, box: AABB) -> bool:
+	var longest := "z"
+	if box.size.x > box.size.z and box.size.x >= box.size.y:
+		longest = "x"
+	elif box.size.y > box.size.z and box.size.y > box.size.x:
+		longest = "y"
+
+	if longest == "z":
+		# lambai theek hai; sirf tab warning jab shape shak wala ho (lambai ~ height)
+		if box.size.z < box.size.y * 1.1:
+			push_warning("WeaponModel: '%s' ki lambai (%.2f) aur ubhaar (%.2f) lagbhag barabar hain — barrel -Z hai ya nahi, ek baar dekh lo"
+					% [inst.name, box.size.z, box.size.y])
+		return false
+
+	inst.rotation.y += HALF_PI if longest == "x" else 0.0
+	inst.rotation.x -= HALF_PI if longest == "y" else 0.0
+	push_warning("WeaponModel: '%s' ka lambai axis %s tha -> Z pe ghumaya (barrel -Z maan liya, manual review)"
+			% [inst.name, longest.to_upper()])
+	return true
+
+
 ## Weapon ke model ke rang: surface 0 = body, baaki sab = accent.
-## (Single-surface models pe poora body colour lagta hai.)
+## (Single-surface models pe poora body colour lagta hai.) Spec: metallic 0.6, roughness 0.4
 static func _apply_weapon_skin(node: Node3D, body_color: Color, accent_color: Color) -> void:
-	var body_mat := _mat(body_color, 0.35, 0.55)
-	var accent_mat := _mat(accent_color, 0.45, 0.45)
+	var body_mat := _mat(body_color, 0.6, 0.4)
+	var accent_mat := _mat(accent_color, 0.6, 0.4)
 	for mesh_node in _mesh_nodes(node, 0, []):
 		var mesh: Mesh = mesh_node.mesh
 		var surfaces := 1

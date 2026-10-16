@@ -150,11 +150,14 @@ jobs:
           godot --version 2>&1 | tee -a "$DIAG"
 
       # -------------------------------------------------------------- assets --
-      # Asset pipeline (teen hisse, teeno fail-soft):
+      # Asset pipeline (chaar hisse, chaaron fail-soft):
       #   7c) purane Kenney nature models (optional extra — net na ho to skip; Quaternius
       #       models already repo me hain, ye sirf backup variety ke liye hain)
-      #   7d) repo me pade Quaternius FBX -> GLB convert (tools/fbx2glb.py, pure python)
-      #       Godot 4 .fbx import NAHI kar sakta, isliye conversion build ke waqt hoti hai.
+      #   7d) WEAPONS: assets/downloaded_obj/Weapons ke OBJ+MTL -> GLB
+      #       (tools/obj2glb.py, pure python). Ye weapons ka asli source hai.
+      #   7d-b) BAaki sab: assets/downloaded ke FBX -> GLB (tools/fbx2glb.py).
+      #       Godot 4 na .fbx na .obj import kar sakta, isliye conversion build ke waqt hoti hai.
+      #       FBX step `--skip-existing` se chalta hai, isliye weapons ke GLB OBJ se hi bante hain.
       #   7e) bane hue .glb ko check karo (tools/glbcheck.py)
       # Kuch bhi fail ho to koi baat nahi: scripts/assets.gd ka procedural fallback
       # chalta hai aur game PHIR BHI banta hai.
@@ -166,7 +169,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: assets/models
-          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx') }}
+          # Key me dono source folders ka hash hai -> naya model aane pe naya cache
+          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx') }}-${{ hashFiles('assets/downloaded_obj/**/*.obj') }}
 
       - name: "7c) Download CC0 nature assets (fail-soft)"
         continue-on-error: true
@@ -225,6 +229,49 @@ jobs:
             echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
           fi
 
+      # ---- 7d) OBJ -> GLB conversion (weapons ka asli source) ----
+      # assets/downloaded_obj/Weapons/*.obj + *.mtl -> assets/models/weapons/*.glb
+      # (Godot 4 .obj import nahi karta, isliye build ke waqt convert hota hai)
+      - name: "7d) OBJ -> GLB conversion (weapons)"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          mkdir -p build
+          OUT="assets/models"
+          OBJ_COUNT=$(find assets/downloaded_obj -name '*.obj' 2>/dev/null | wc -l)
+          echo "repo me OBJ weapons: $OBJ_COUNT" | tee -a "$DIAG"
+          if [ "$OBJ_COUNT" -eq 0 ]; then
+            echo "::warning::koi .obj nahi mila -> weapons FBX pack se ya procedural banenge" | tee -a "$DIAG"
+            exit 0
+          fi
+
+          # .mtl (material/colour) saath hona chahiye — dono check karte hain
+          MTL_COUNT=$(find assets/downloaded_obj -name '*.mtl' 2>/dev/null | wc -l)
+          echo ".mtl files: $MTL_COUNT" | tee -a "$DIAG"
+          if [ "$MTL_COUNT" -lt "$OBJ_COUNT" ]; then
+            echo "::warning::kuch .obj ke paas .mtl nahi hai -> unka rang default (grey) rahega" | tee -a "$DIAG"
+          fi
+
+          python3 tools/obj2glb.py assets/downloaded_obj --out-root "$OUT" \
+            --report build/obj-report.json 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::OBJ conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
+
+          GLB_COUNT=$(find "$OUT/weapons" -name '*.glb' 2>/dev/null | wc -l)
+          echo "weapon glb ready: $GLB_COUNT" | tee -a "$DIAG"
+          if [ "$GLB_COUNT" -eq 0 ]; then
+            echo "::warning::ek bhi weapon glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
+          fi
+
+          # Raw OBJ/MTL build workspace se hata do (repo me safe hain):
+          # Godot ko sirf .glb chahiye, aur assets/downloaded_obj/ me .gdignore hai
+          # (isliye Godot us folder ko scan bhi nahi karta).
+          find assets/downloaded_obj -name '*.obj' -delete
+          find assets/downloaded_obj -name '*.mtl' -delete
+          echo "OBJ/MTL build workspace se hata diye (repo me safe hain)" | tee -a "$DIAG"
+
       # ---- 7d) FBX -> GLB conversion (repo me pade CC0 models) ----
       # Godot 4 me FBX importer nahi hai — isliye pehle python se convert karte hain.
       # tools/fbx2glb.py pure stdlib hai (koi pip install nahi, koi binary download nahi).
@@ -246,7 +293,8 @@ jobs:
 
           # .glb SIRF assets/models/ me jate hain (assets/downloaded/ me .gdignore hai,
           # isliye Godot wahan ka kuch bhi import nahi karta)
-          python3 tools/fbx2glb.py assets/downloaded --out-root "$OUT" \
+          # --skip-existing: jo .glb OBJ step (7d) ne bana diya hai use chhedo mat
+          python3 tools/fbx2glb.py assets/downloaded --out-root "$OUT" --skip-existing \
             --report build/glb-report.json 2>&1 | tee -a "$DIAG" || \
             echo "::warning::conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
 

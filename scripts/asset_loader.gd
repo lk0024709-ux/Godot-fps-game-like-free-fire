@@ -23,15 +23,20 @@ extends RefCounted
 ##
 
 ## Models kahan dhundhne hain (order matlab rakhta hai: pehla folder jeetta hai).
-## "assets/models/"  = CI ne banaye hue .glb (Godot-imported) — asli jagah
-## "assets/downloaded/" = tumhare original FBX (skip ho jate hain) + agar tumne
-##                        khud wahin .glb daal diya ho to wo bhi chal jayega
-const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/downloaded/"]
+## "assets/models/"       = CI ne banaye hue .glb (Godot-imported) — asli jagah.
+##                          FBX (assets/downloaded) aur OBJ (assets/downloaded_obj) dono
+##                          isi me convert hote hain (dekho tools/fbx2glb.py + tools/obj2glb.py).
+## "assets/downloaded/"     = FBX source + `.gdignore` (Godot inhe scan nahi karta).
+## "assets/downloaded_obj/" = OBJ/MTL source (weapons) + `.gdignore`. Yahan bhi agar koi
+##                          khud .glb daal de to wo mil jayega — warna skip.
+const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/downloaded/",
+		"res://assets/downloaded_obj/"]
 
-## Kaunse formats chalte hain. .fbx list me hai taaki file naming sahi rahe — Godot 4
-## usko load nahi kar sakta, isliye aisi file listing me sirf tab aati hai jab Godot
-## usko sach me load kar sake (ResourceLoader.exists() check hota hai).
-const EXTENSIONS: Array[String] = [".glb", ".gltf", ".fbx"]
+## Kaunse formats chalte hain. `.fbx`/`.obj` list me hain taaki file naming sahi rahe —
+## Godot inhe load nahi kar sakta (isliye CI .glb convert karta hai), aur aisi file
+## listing me sirf tab aati hai jab Godot usko sach me load kar sake
+## (ResourceLoader.exists() check hota hai).
+const EXTENSIONS: Array[String] = [".glb", ".gltf", ".obj", ".fbx"]
 
 ## Saari categories
 const CATEGORIES: Array[String] = ["weapons", "nature", "characters", "vehicles"]
@@ -60,7 +65,8 @@ const VEHICLE_FILES := {
 const FILE_PREFIXES := {
 	"weapons": {
 		"ar": "AssaultRifle", "sniper": "SniperRifle", "smg": "SubmachineGun",
-		"bullpup": "Bullpup", "shotgun": "Shotgun",
+		"submachine": "SubmachineGun", "bullpup": "Bullpup", "shotgun": "Shotgun",
+		"pistol": "Pistol", "revolver": "Revolver",
 	},
 	"nature": {
 		"pine": "PineTree", "rock": "Rock", "plant": "Plant", "grass": "Grass",
@@ -392,6 +398,23 @@ static func _try_load(name_fragment: String, category: String) -> PackedScene:
 		return res as PackedScene
 	_warn_once("bad:" + path, "AssetLoader: %s PackedScene nahi hai -> skip" % path)
 	return null
+
+
+## Jab resource PackedScene na ho par Mesh ho (jaise Godot ne `.obj` khud import kar liya).
+## Us case me ek MeshInstance3D wapas dete hain — assets.gd usko bhi waise hi taiyaar
+## kar leta hai (skin, shadow, scale, muzzle). Kuch na mile to null.
+static func load_mesh_node(name_fragment: String, category: String = "weapons") -> MeshInstance3D:
+	var path := _resolve(name_fragment, category)
+	if path.is_empty():
+		return null
+	var res: Resource = load(path)
+	if not (res is Mesh):
+		return null
+	var node := MeshInstance3D.new()
+	node.name = name_fragment
+	node.mesh = res as Mesh
+	_warn_once("mesh:" + path, "AssetLoader: %s Mesh ke roop me load hua (MeshInstance3D bana)" % path)
+	return node
 
 
 ## Exported PCK me kabhi kabhi ".remap"/".import" laga hua naam aata hai -> hata do

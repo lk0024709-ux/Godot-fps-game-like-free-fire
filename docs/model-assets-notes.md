@@ -40,3 +40,40 @@ ho to `SECOND_GROUP`/`SPECIAL_ALIASES` me ek line add kar do.
 `scripts/selftest.gd` (CI step 8d) yahi sab check karta hai: har gun ka model, muzzle
 node ka barrel ke aage hona, character ki height 1.8 m, pair zameen pe, aur "sab assets
 gayab" wala fail-soft case. Fail hone pe poora output commit ke comment me aata hai.
+
+---
+
+# OBJ weapons ka pipeline (assets/downloaded_obj/)
+
+Weapons ka source **OBJ + MTL** hai (`assets/downloaded_obj/Weapons/`, 40 guns = 80 files).
+Baaki sab (nature/characters/vehicles) FBX me hai (`assets/downloaded/`).
+
+1. Build ke waqt step **7d**:
+   `python3 tools/obj2glb.py assets/downloaded_obj --out-root assets/models`
+   → `assets/models/weapons/<Name>.glb`
+2. Phir FBX step (**7d-b**) `--skip-existing` ke saath chalta hai, isliye weapons ke `.glb`
+   OBJ se hi bante hain (FBX weapons sirf backup hain).
+3. Godot sirf `assets/models/` import karta hai. Raw folders me **`.gdignore`** pada hai,
+   isliye Godot unhe scan bhi nahi karta (FBX wale hang ki wajah yahi thi).
+4. Raw `.obj`/`.mtl` build workspace se hata diye jate hain (repo me safe rehte hain).
+
+## Muzzle direction (barrel kis taraf hai)
+
+Is pack me **har gun ka barrel +X taraf** hai (stock -X pe). Ye 40 models ke side-view
+renders se verify kiya gaya (Bullpup_1 aur SubmachineGun_3 jaise ajeeb shapes me bhi).
+Isliye converter `rotY(90)` lagata hai, jisse:
+
+* lambai ka axis X → **Z** ho jata hai
+* barrel (+X) → **-Z** (game me yahi chahiye, muzzle node usi sirre pe lagta hai)
+
+**Auto-flip jaan-boojh kar nahi hai:** "jis sirre pe zyada ubhaar (grip/stock) ho wo peeche"
+wala guess is pack me 2 guns pe **ulta** baithta hai (Bullpup_1, SubmachineGun_3 —
+dono ke renders me barrel phir bhi +X pe hai). Isliye converter/loader sirf **warning**
+deti hai, khud se 180° nahi ghumati (`assets.gd` → `_normalize_orientation()`).
+
+## Winding (inside-out check)
+
+`tools/obj2glb.py` har model ke triangle ka geometric normal, OBJ ke apne `vn` normals se
+milata hai. Agar 60% se zyada faces ulte nikle to winding flip kar deta hai (Godot back-face
+cull karta hai, warna gun andar se dikhta). Run 40/40 models ka result: **sab theek**
+(flip ki zaroorat kisi me nahi padi).
