@@ -152,6 +152,8 @@ tools/fbx2glb.py               # FBX 7.x -> GLB converter (pure python, koi pip/
 tools/glbcheck.py              # .glb files ki jaanch (header/accessor/normals) — CI step 7e
 tools/gdcheckrefs.py           # Har Helper.func() call aur parameter count ki cross-check — CI step 8b
 docs/model-assets-notes.md     # Ye sab kaise kaam karta hai (aur .gdignore kyun hai)
+docs/obj-weapons-report.md     # OBJ weapons pack ka poora report (mapping + verify checklist)
+docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf — isi se verify hua)
 
 .github/workflows/build-apk.yml # GitHub Actions: FBX->GLB convert + Godot 4.2.2 + keystore + selftest + APK export + upload
 ```
