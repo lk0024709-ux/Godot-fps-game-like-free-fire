@@ -116,8 +116,107 @@ def unused_params(argv):
     return 0
 
 
+# --------------------------------------------------------------- call arity ----
+# Godot galat argument count wale call ko kai baar runtime pe hi pakadta hai
+# ("Invalid call. Nonexistent function ... with N arguments"), aur headless CI
+# me wo galti sirf tab dikhti hai jab wo line chale. Ye checker wahi pehle hi
+# pakad leta hai: <Helper>.<func>(...) ke arguments gine jate hain aur helper
+# file me uski definition ke required/total param se milaye jate hain.
+
+FUNC_SIG = re.compile(
+    r"^[ \t]*(?:static[ \t]+)?func[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(", re.M)
+
+
+def _split_args(src, open_idx):
+    """'(' index se matching ')' tak ke arguments ko top-level pe todo."""
+    args = []
+    cur = []
+    depth = 0
+    i = open_idx + 1
+    quote = ""
+    while i < len(src):
+        ch = src[i]
+        if quote:
+            cur.append(ch)
+            if ch == "\\":
+                if i + 1 < len(src):
+                    cur.append(src[i + 1])
+                    i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+            cur.append(ch)
+        elif ch in "([{":
+            depth += 1
+            cur.append(ch)
+        elif ch in ")]}":
+            if depth == 0 and ch == ")":
+                args.append("".join(cur))
+                return args, i
+            depth -= 1
+            cur.append(ch)
+        elif ch == "," and depth == 0:
+            args.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+        i += 1
+    return args, -1
+
+
+def _signatures(path):
+    src = open(path).read()
+    out = {}
+    for match in FUNC_SIG.finditer(src):
+        args, _end = _split_args(src, match.end() - 1)
+        params = [a for a in args if a.strip()]
+        required = sum(1 for a in params if "=" not in a)
+        out[match.group(1)] = (required, len(params))
+    return out
+
+
+def check_arity(argv):
+    problems = []
+    checked = 0
+    sigs = {h: _signatures(p) for h, p in HELPERS.items() if os.path.exists(p)}
+    for script in sorted(os.path.join("scripts", f) for f in os.listdir("scripts")
+                         if f.endswith(".gd")):
+        src = open(script).read()
+        for match in CALL.finditer(src):
+            helper, name = match.group(1), match.group(2)
+            # call hone chahiye: naam ke turant baad '(' (space allowed)
+            rest = src[match.end():]
+            if not re.match(r"[ \t]*\(", rest):
+                continue                      # jaise Loader.CATEGORIES (list)
+            open_idx = match.end() + rest.index("(")
+            args, end = _split_args(src, open_idx)
+            if end < 0:
+                continue                      # multi-line ya samajh nahi aaya
+            given = len([a for a in args if a.strip()])
+            sig = sigs.get(helper, {}).get(name)
+            if not sig:
+                continue
+            required, total = sig
+            checked += 1
+            if given < required or given > total:
+                line = src[:match.start()].count("\n") + 1
+                problems.append(
+                    "%s:%d -> %s.%s() ko %d argument diye, par definition (%s) me "
+                    "%d-%d chahiye" % (script, line, helper, name, given,
+                                       HELPERS[helper], required, total))
+    if problems:
+        print("ARITY PROBLEMS (%d):" % len(problems))
+        for p in problems:
+            print("  " + p)
+        return 1
+    print("Arity OK: %d call(s) ke arguments definition se match karte hain" % checked)
+    return 0
+
+
 def entry(argv):
     rc = main(argv)
+    rc = max(rc, check_arity(argv))
     if "--params" in argv:
         rc = max(rc, unused_params(argv))
     return rc

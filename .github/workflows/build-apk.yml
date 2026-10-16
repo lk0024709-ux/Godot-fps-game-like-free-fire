@@ -294,8 +294,14 @@ jobs:
 
           bad=0
           for f in scripts/*.gd; do
-            out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1)
-            code=$?
+            # `if ... then ... else` pattern zaroori hai: GitHub ke run: steps me
+            # bash -e chalta hai, aur check fail hone pe (non-zero) script wahin
+            # ruk jata — output dikhta hi nahi tha.
+            if out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1); then
+              code=0
+            else
+              code=$?
+            fi
             if [ $code -ne 0 ] || echo "$out" | grep -qiE "parse error|script error|failed to load"; then
               bad=$((bad + 1))
               echo "--- $f ---" | tee -a "$DIAG"
@@ -326,19 +332,58 @@ jobs:
       # scripts/selftest.gd: loader + 28 weapons + character + nature + vehicle + fail-soft.
       # Kuch bhi galat ho to ye step RED ho jata hai — silent kharab APK nahi banega.
       - name: "8d) Asset selftest (downloaded models + procedural fallback)"
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
-          OUT=$(godot --headless --path . --quit-after 600 scenes/selftest.tscn 2>&1)
-          echo "$OUT" | tee -a "$DIAG"
 
-          if echo "$OUT" | grep -q "SELFTEST_EXIT_OK"; then
+          LOG="$RUNNER_TEMP/selftest.log"
+          echo "godot: $(command -v godot || echo nahi-mila) | scene: $([ -f scenes/selftest.tscn ] && echo mila || echo GAYAB)"
+
+          # ---------------------------------------------------------------
+          # DHYAAN: GitHub ke "run:" steps me bash -e chalta hai. Selftest fail
+          # hone pe godot exit code 1 deta hai — pehle usi wajah se ye step
+          # 0 second me chup-chaap fail ho jata tha aur output kahin nahi dikhta
+          # (na log me, na commit comment me). Isliye yahan `set +e` hai.
+          # ---------------------------------------------------------------
+          set +e
+          godot --headless --path . --quit-after 600 scenes/selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+          echo "godot exit code: $RC" | tee -a "$DIAG"
+
+          # run page pe summary (phone se padhna aasan)
+          {
+            echo "## Asset selftest"
+            echo ""
+            echo '```'
+            grep -E "note:|SELFTEST|FAIL:" "$LOG" | tail -n 40 || tail -n 40 "$LOG"
+            echo '```'
+            echo "exit code: $RC"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$RC" -eq 0 ] && grep -q "SELFTEST_EXIT_OK" "$LOG"; then
             echo "::notice::Asset selftest PASS (downloaded + procedural dono chal rahe hain)"
-          else
-            echo "::error::Asset selftest FAIL — upar dekho kaunsa check toota (game phir bhi procedural pe banta rahega)"
-            exit 1
+            exit 0
           fi
+
+          # FAIL: poora output commit comment me daal do (run page ke alawa
+          # yahin se bhi padha ja sake — aur CI ke bahar se bhi).
+          {
+            echo "## Asset selftest FAIL (run ${GITHUB_RUN_ID}, exit code ${RC})"
+            echo ""
+            echo '```'
+            tail -c 9000 "$LOG" 2>/dev/null || echo "(selftest log khali hai)"
+            echo '```'
+          } > "$RUNNER_TEMP/selftest-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/selftest-report.md" || echo "comment post nahi hua"
+          echo "::error::Asset selftest FAIL — upar ka output aur commit comment dekho (game phir bhi procedural pe banta rahega)"
+          exit 1
 
       - name: "9) APK export (release)"
         run: |
