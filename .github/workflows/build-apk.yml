@@ -151,7 +151,8 @@ jobs:
 
       # -------------------------------------------------------------- assets --
       # Asset pipeline (teen hisse, teeno fail-soft):
-      #   7c) purane Kenney nature models (optional extra — net na ho to skip)
+      #   7c) purane Kenney nature models (optional extra — net na ho to skip; Quaternius
+      #       models already repo me hain, ye sirf backup variety ke liye hain)
       #   7d) repo me pade Quaternius FBX -> GLB convert (tools/fbx2glb.py, pure python)
       #       Godot 4 .fbx import NAHI kar sakta, isliye conversion build ke waqt hoti hai.
       #   7e) bane hue .glb ko check karo (tools/glbcheck.py)
@@ -159,11 +160,13 @@ jobs:
       # chalta hai aur game PHIR BHI banta hai.
       # NOTE: ye steps "Project import" se PEHLE hone zaroori hain — import ke waqt hi
       # Godot in .glb files ko padhta hai.
-      - name: "7b) Cache: downloaded CC0 assets"
+      # NOTE: converted .glb ko cache karte hain (FBX source ab repo me hi hai).
+      # Cache miss ho to conversion chal jata hai — koi problem nahi, bas 3-4 second zyada.
+      - name: "7b) Cache: converted models"
         uses: actions/cache@v4
         with:
-          path: assets/downloaded
-          key: cc0-assets-${{ env.NATURE_ASSET_VERSION }}-${{ env.NATURE_ASSET_SHA }}
+          path: assets/models
+          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx') }}
 
       - name: "7c) Download CC0 nature assets (fail-soft)"
         continue-on-error: true
@@ -172,7 +175,9 @@ jobs:
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
 
-          DEST="assets/downloaded/nature"
+          # NOTE: assets/downloaded/ me .gdignore hai, isliye download seedha
+          # assets/models/nature me jata hai (wahi folder Godot import karta hai)
+          DEST="assets/models/nature"
           mkdir -p "$DEST"
           # "GLTF format" me space hai -> %20
           BASE="https://raw.githubusercontent.com/ETdoFresh/kenney.nl/${NATURE_ASSET_SHA}/kenney_natureKit_2.1/Models/GLTF%20format"
@@ -186,7 +191,7 @@ jobs:
           )
 
           # Poora download 150 second me nipat jaye (workflow ka 10 min budget bachane ke liye)
-          DEADLINE=$(( $(date +%s) + 150 ))
+          DEADLINE=$(( $(date +%s) + 45 ))
           for f in "${FILES[@]}"; do
             if [ -s "$DEST/$f" ]; then
               continue                                  # cache se mil gaya
@@ -230,6 +235,8 @@ jobs:
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
 
+          mkdir -p build
+          OUT="assets/models"
           FBX_COUNT=$(find assets/downloaded -name '*.fbx' 2>/dev/null | wc -l)
           echo "repo me FBX files: $FBX_COUNT" | tee -a "$DIAG"
           if [ "$FBX_COUNT" -eq 0 ]; then
@@ -237,15 +244,26 @@ jobs:
             exit 0
           fi
 
-          python3 tools/fbx2glb.py assets/downloaded --report build/glb-report.json 2>&1 | tee -a "$DIAG" || \
+          # .glb SIRF assets/models/ me jate hain (assets/downloaded/ me .gdignore hai,
+          # isliye Godot wahan ka kuch bhi import nahi karta)
+          python3 tools/fbx2glb.py assets/downloaded --out-root "$OUT" \
+            --report build/glb-report.json 2>&1 | tee -a "$DIAG" || \
             echo "::warning::conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
 
-          GLB_COUNT=$(find assets/downloaded -name '*.glb' | wc -l)
-          echo "convert ho gaye: $GLB_COUNT glb" | tee -a "$DIAG"
-          du -sh assets/downloaded/* 2>/dev/null | tee -a "$DIAG" || true
+          GLB_COUNT=$(find "$OUT" -name '*.glb' 2>/dev/null | wc -l)
+          echo "convert ho gaye: $GLB_COUNT glb -> $OUT" | tee -a "$DIAG"
+          du -sh "$OUT"/* 2>/dev/null | tee -a "$DIAG" || true
           if [ "$GLB_COUNT" -eq 0 ]; then
             echo "::warning::ek bhi glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
           fi
+
+          # FBX ko build workspace se hata do:
+          # Godot 4 na FBX import kar sakta hai na samajh sakta hai, aur bade packs pe
+          # uska import scan ghanton atak jata hai (yahi is repo ka CI hang ho raha tha).
+          # Source repo me pade rehte hain — yahan sirf build ke liye hata rahe hain.
+          find assets/downloaded -name '*.fbx' -delete
+          find assets/downloaded -name '*.fbx.import' -delete
+          echo "FBX build workspace se hata diye (repo me safe hain)" | tee -a "$DIAG"
 
       # ---- 7e) .glb sanity check (header/accessors/index range) ----
       - name: "7e) GLB sanity check"
@@ -254,7 +272,7 @@ jobs:
           set -uo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
-          python3 tools/glbcheck.py assets/downloaded 2>&1 | tee -a "$DIAG" || \
+          python3 tools/glbcheck.py assets/models 2>&1 | tee -a "$DIAG" || \
             echo "::warning::kuch glb theek nahi hai (convert dobara chalega agli baar)" | tee -a "$DIAG"
 
       - name: "8) Project import (headless)"
@@ -336,8 +354,8 @@ jobs:
             echo '| folder | files | size |'
             echo '|---|---|---|'
             for d in weapons nature characters vehicles; do
-              f=$(find "assets/downloaded" -path "*$d*" -name '*.glb' 2>/dev/null | wc -l)
-              s=$(du -sh "$(find assets/downloaded -maxdepth 1 -iname "$d" -type d | head -1)" 2>/dev/null | cut -f1)
+              f=$(find "assets/models/$d" -name '*.glb' 2>/dev/null | wc -l)
+              s=$(du -sh "assets/models/$d" 2>/dev/null | cut -f1)
               echo "| $d | $f glb | ${s:-0} |"
             done
             echo ""

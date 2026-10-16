@@ -1106,7 +1106,9 @@ def main(argv):
     ap = argparse.ArgumentParser(description="FBX -> GLB converter (CC0 asset pipeline)")
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("--kind", default="auto")
-    ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--out-dir", default=None, help="saari .glb ek hi folder me daalo")
+    ap.add_argument("--out-root", default=None,
+                    help="<out-root>/<category>/<file>.glb — category source folder se aata hai")
     ap.add_argument("--suffix", default="")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--report", default="", help="likhit JSON report ka path")
@@ -1124,7 +1126,11 @@ def main(argv):
     total_in = total_out = 0
     reports = []
     for f in files:
-        out_dir = args.out_dir or os.path.dirname(f)
+        if args.out_root:
+            # category = source folder ka naam (assets/downloaded/Characters -> characters)
+            out_dir = os.path.join(args.out_root, os.path.basename(os.path.dirname(f)).lower())
+        else:
+            out_dir = args.out_dir or os.path.dirname(f)
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, os.path.splitext(os.path.basename(f))[0] + args.suffix + ".glb")
         try:
