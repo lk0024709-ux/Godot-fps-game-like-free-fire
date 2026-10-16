@@ -67,6 +67,19 @@ const FILE_PREFIXES := {
 	},
 }
 
+## Upload kiye weapons pack me AR ke DO group hain:
+##   AssaultRifle_1..5   (pehla group)
+##   AssaultRifle2_1..4  (doosra group — naam me "2" hai, number phir 1 se shuru)
+## Isliye "ar_6" ka seedha matlab AssaultRifle2_1 hai. Neeche har prefix ke liye
+## batate hain ki doosra group ka naam kya hai aur pehle group me kitni files hain
+## (utna number ghata kar doosre group me dhundha jata hai).
+## Pehla group hamesha pehle try hota hai — kal ko AssaultRifle_6 aa jaye to wahi milega.
+const SECOND_GROUP := {
+	"weapons": {
+		"ar": {"prefix": "AssaultRifle2", "offset": 5},
+	},
+}
+
 ## khaas aliases (jo prefix rule me nahi aate)
 const SPECIAL_ALIASES := {
 	"nature": {
@@ -306,6 +319,13 @@ static func _alias_candidates(name: String, category: String) -> PackedStringArr
 		var tail_num := parts[parts.size() - 1]
 		if prefixes.has(head) and tail_num.is_valid_int():
 			out.append(str(prefixes[head]) + "_" + tail_num)
+			# doosra group (jaise ar_6 -> AssaultRifle2_1) — pack me AR do baar hai
+			var second: Dictionary = SECOND_GROUP.get(category, {})
+			if second.has(head):
+				var info: Dictionary = second[head]
+				var shifted := int(tail_num) - int(info.get("offset", 0))
+				if shifted >= 1:
+					out.append(str(info.get("prefix", "")) + "_" + str(shifted))
 		elif prefixes.has(lower):
 			out.append(str(prefixes[lower]))
 	return out
