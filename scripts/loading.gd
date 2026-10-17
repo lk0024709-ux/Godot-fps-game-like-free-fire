@@ -16,6 +16,17 @@ extends Control
 ## NOTE: loading screen kam se kam `MIN_SHOW` second dikhti hai, warna 60fps pe
 ## progress bar ka pata hi nahi chalta (scene load 0.05s me ho jata hai).
 ##
+## GODOT KA EK KNOWN BUG (isliye neeche extra safety hai):
+## `load_threaded_request()` kabhi-kabhi aise scene ko parse nahi kar pata jisme
+## doosre scene "instance" kiye gaye hain (main.tscn me player.tscn + hud.tscn hain).
+## Error aisa aata hai: "Parse Error ... at _parse_node_tag" aur load beech me atak
+## jata hai (status IN_PROGRESS hi reh jata hai). Isliye:
+##   1. pehle main.tscn ke dependencies MAIN THREAD pe cache kar lete hain (prewarm)
+##      — isse threaded load me sirf tscn parse bachta hai,
+##   2. phir bhi fail/atak jaye to `THREAD_TIMEOUT` ke baad loading screen aage badh
+##      jati hai aur main.tscn home ke BATTLE button pe synchronously load hota hai.
+## Game kabhi loading screen pe atakta nahi.
+##
 
 const MAIN_SCENE := "res://scenes/main.tscn"
 const NEXT_SCENE := "res://scenes/home.tscn"
@@ -24,6 +35,20 @@ const NEXT_SCENE := "res://scenes/home.tscn"
 const MIN_SHOW := 1.2
 ## 100% hone ke baad itna ruk kar home pe jao (spec: 0.5s)
 const DONE_DELAY := 0.5
+## Threaded load itni der me poora na ho to chhod do (seconds, game-time)
+const THREAD_TIMEOUT := 1.5
+## Aakhri safety: itne second baad loading screen HAR HAAL me aage badhegi
+const HARD_TIMEOUT := 6.0
+
+## main.tscn ke bhaari dependencies — threaded load se PEHLE main thread pe cache
+## hote hain (upar wale Godot bug se bachne ke liye). Manually listed isliye ki
+## Godot 4.2 me tscn se dependency list nikalne ka koi simple API nahi hai.
+const PREWARM: Array[String] = [
+	"res://scripts/main.gd",
+	"res://scenes/player.tscn",
+	"res://scenes/enemy.tscn",
+	"res://scenes/hud.tscn",
+]
 
 var _bar: ProgressBar = null
 var _bar_min_width: float = 220.0
@@ -31,6 +56,7 @@ var _bar_min_width: float = 220.0
 var _requested: bool = false
 var _pulled: bool = false
 var _finished: bool = false
+var _gave_up: bool = false        ## threaded load fail -> home se load hoga
 var _elapsed: float = 0.0
 var _shown: float = 0.0            ## bar pe jo dikh raha hai (0..1, smooth)
 var _target: float = 0.0           ## asli progress (0..1)
@@ -42,7 +68,10 @@ func _ready() -> void:
 	_build_ui()
 	_fit_bar()
 
-	# ---- main.tscn ko thread me load karo ----
+	# ---- pehle dependencies main thread pe cache karo (threaded-parse bug se bachne ke liye) ----
+	_prewarm()
+
+	# ---- ab main.tscn ko thread me load karo ----
 	var err: int = ResourceLoader.load_threaded_request(MAIN_SCENE)
 	if err == OK:
 		_requested = true
@@ -164,6 +193,20 @@ func _make_bar_fill() -> StyleBoxFlat:
 
 # -------------------------------------------------------------- loading -----
 
+## main.tscn ke dependencies main thread pe cache karo. Isse threaded load me
+## sirf tscn parse bachta hai aur wahi Godot 4.2 ka threaded-parse bug avoid hota hai.
+func _prewarm() -> void:
+	for path in PREWARM:
+		if not ResourceLoader.exists(path):
+			continue
+		if ResourceLoader.has_cached(path):
+			continue
+		var res: Resource = load(path)          # synchronous, par sirf ek baar (loading screen pe)
+		if res == null:
+			push_warning("LOADING: prewarm fail -> %s" % path)
+	print("LOADING: prewarm done (%d deps)" % PREWARM.size())
+
+
 func _process(delta: float) -> void:
 	if _finished:
 		return
@@ -174,20 +217,24 @@ func _process(delta: float) -> void:
 		var status: int = ResourceLoader.load_threaded_get_status(MAIN_SCENE, _progress)
 		match status:
 			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-				_target = clampf(float(_progress[0]) if _progress.size() > 0 else 0.0, 0.0, 1.0)
+				var raw: float = float(_progress[0]) if _progress.size() > 0 else 0.0
+				_target = clampf(raw, 0.0, 0.95)
+				if _elapsed >= THREAD_TIMEOUT:
+					_give_up("timeout (%.1fs tak IN_PROGRESS)" % _elapsed)
 			ResourceLoader.THREAD_LOAD_LOADED:
-				_target = 1.0
-				# load_theaded_get() call karna zaroori hai — isse thread band hota hai
+				# load_threaded_get() call karna zaroori hai — isse thread band hota hai
 				# aur scene ResourceLoader ke cache me chala jata hai (BATTLE turant khulega).
 				var packed: Resource = ResourceLoader.load_threaded_get(MAIN_SCENE)
 				_pulled = true
-				print("LOADING: main.tscn ready (%s)" %
-						("PackedScene" if packed is PackedScene else "resource"))
+				if packed is PackedScene:
+					_target = 1.0
+					print("LOADING: main.tscn ready (threaded)")
+				else:
+					_give_up("resource null hai")
 			_:
 				# THREAD_LOAD_FAILED / INVALID_RESOURCE
-				_target = 1.0
 				_pulled = true
-				push_warning("LOADING: thread load fail (status %d) -> home se load hoga" % status)
+				_give_up("status %d" % status)
 
 	# ---- bar ko smooth chalao (seedha jump nahi) ----
 	if _target >= 1.0:
@@ -196,12 +243,29 @@ func _process(delta: float) -> void:
 		_shown = lerpf(_shown, _target, clampf(delta * 6.0, 0.0, 1.0))
 	_bar.value = _shown * 100.0
 
+	# ---- hard safety: kuch bhi ho, itni der baad aage badho ----
+	if _elapsed >= HARD_TIMEOUT and _target < 1.0:
+		_give_up("hard timeout")
+		_done_at = _elapsed
+
 	# ---- 100% -> 0.5s ruk kar home ----
 	if _target >= 1.0:
 		if _done_at < 0.0:
 			_done_at = _elapsed
 		if _elapsed >= maxf(_done_at + DONE_DELAY, MIN_SHOW):
 			_finish()
+
+
+## Threaded load chhod do — loading screen aage badhegi aur main.tscn home ke
+## BATTLE button pe synchronously load hoga (game atkega nahi).
+func _give_up(reason: String) -> void:
+	if _gave_up:
+		return
+	_gave_up = true
+	_requested = false                 # polling band (thread ko chhedte nahi)
+	_target = 1.0
+	print("LOADING: threaded load nahi chala (%s) -> main.tscn BATTLE pe load hoga" % reason)
+	push_warning("LOADING: threaded load fail (%s) -> home se load" % reason)
 
 
 func _finish() -> void:
