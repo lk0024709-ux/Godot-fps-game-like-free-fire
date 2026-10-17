@@ -116,7 +116,7 @@ func _build_body() -> void:
 	add_child(model)
 
 	if name_tag:
-		_add_name_tag(model, CHARACTERS.get_name(character_index))
+		_add_name_tag(model, CHARACTERS.display_name(character_index))
 
 	# ---- FPS invisibility (spec) ----
 	# Body + naam ka tag render layer 2 pe bhejo, aur apne camera ka cull_mask se

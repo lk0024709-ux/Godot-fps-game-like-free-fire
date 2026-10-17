@@ -50,7 +50,7 @@ const GREEN_ZONES: Array[String] = ["Haveli", "Haritvan", "Khet", "Kanak"]
 ## 40 se zyada grass/plant ho to MultiMeshInstance3D use hota hai (ek draw call)
 @export var multimesh_threshold: int = 40
 ## Patti: props deewar ke kitne paas lage (1.0 = deewar tak, 0.7 = thoda andar tak)
-@export var props_band_factor: float = 0.80
+@export var props_band_factor: float = 0.62
 
 @export_group("Buildings")
 @export var buildings_enabled: bool = true       ## enterable buildings banao?
@@ -308,6 +308,7 @@ func _build_buildings() -> void:
 				"pos": spot["pos"],
 				"half": half,
 				"radius": Vector2(half.x, half.y).length(),
+				"max_half": maxf(half.x, half.y),
 			})
 			kinds[kind] = int(kinds.get(kind, 0)) + 1
 			count += 1
@@ -467,16 +468,24 @@ func _scatter_nature() -> void:
 		var assignments := _distribute(wanted, weight_key, green_only)
 
 		# pehle saari jagah chuno (taaki MultiMesh ek saath bana sake)
+		# Building ke paas jagah na mile to DOBARA try karo (sirf drop na karo) —
+		# warna 14 buildings poora ring kha jati hain aur ped/ghaas kam reh jate hain.
 		var placements: Array = []
 		var counter := 0
 		for zone_name in assignments:
 			var zone_count: int = int(assignments[zone_name])
 			var zone: Dictionary = ZONES[zone_name]
 			for i in zone_count:
-				var pos: Vector3 = _pick_prop_position(zone, inner_radius, rng)
+				var pos := Vector3.ZERO
+				var found := false
+				for attempt in 20:
+					pos = _pick_prop_position(zone, inner_radius, rng)
+					if _prop_spot_free(pos):
+						found = true
+						break
+				if not found:
+					continue                    # 20 koshish ke baad bhi jagah nahi
 				var scale_f: float = rng.randf_range(min_scale, max_scale) * arena_scale
-				if not _prop_spot_free(pos):
-					continue                    # building ke andar/paas ped nahi
 				placements.append({
 					"pos": pos,
 					"scale": scale_f,
@@ -524,8 +533,9 @@ func _pick_prop_position(zone: Dictionary, inner_radius: float, rng: RandomNumbe
 		# deewar ke andar hi raho (chhote maidan me bhi safe)
 		pos.x = clampf(pos.x, -half + 1.0, half - 1.0)
 		pos.z = clampf(pos.z, -half + 1.0, half - 1.0)
-		# beech ka maidan khula rakho (spawn ring se bahar)
-		if Vector2(pos.x, pos.z).length() < arena_size * 0.40:
+		# beech ka maidan khula rakho (spawn ring 0.40 pe hai, props uske thoda andar
+		# se shuru ho sakte hain — buildings ki wajah se ring tang hai)
+		if Vector2(pos.x, pos.z).length() < arena_size * 0.33:
 			continue
 		return pos
 	# 12 koshish me na mila to ring pe hi rakh do
@@ -684,30 +694,50 @@ func _spawn_vehicles() -> void:
 
 ## Gaadi ke liye jagah: apni zone ke ring pe, buildings aur doosri gaadiyon se door.
 ## Extra (random) gaadi ke liye koi bhi zone chalega.
+##
+## Buildings ring ka bada hissa le lete hain, isliye 60 koshish + "sabse khali jagah"
+## wala best-effort: 7 me se ek bhi gaadi drop nahi hoti.
 func _find_vehicle_spot(zone_name: String, rng: RandomNumberGenerator) -> Dictionary:
 	var zone: Dictionary = ZONES.get(zone_name, {})
 	if zone.is_empty():
 		var names := ZONES.keys()
 		zone = ZONES[names[rng.randi() % names.size()]]
 	var base_angle := deg_to_rad(float(zone.get("angle", 0.0)))
-	for attempt in 24:
-		var angle := base_angle + rng.randf_range(-0.5, 0.5)
-		var radius := arena_size * rng.randf_range(0.26, 0.38)
+	var limit: float = arena_size * 0.5 - 3.0
+
+	var best := {}
+	var best_gap := -1e9
+	for attempt in 60:
+		var angle := base_angle + rng.randf_range(-0.9, 0.9)
+		var radius := arena_size * rng.randf_range(0.24, 0.46)
 		var pos := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
-		if _vehicle_spot_free(pos):
+		if absf(pos.x) > limit or absf(pos.z) > limit:
+			continue                              # boundary deewar se door
+		var gap := _building_gap(pos)
+		if gap > 2.2 and _vehicle_spot_free(pos):
 			return {"pos": pos, "yaw": atan2(-pos.x, -pos.z) + rng.randf_range(-0.4, 0.4)}
-	return {}
+		if gap > best_gap:
+			best_gap = gap
+			best = {"pos": pos, "yaw": atan2(-pos.x, -pos.z) + rng.randf_range(-0.4, 0.4)}
+	# koi bhi jagah 2.2 m se door nahi mili -> jo sabse khali thi wahi le lo
+	return best
 
 
-## Ye jagah gaadi ke liye khali hai? (building se 2.4 m, doosri gaadi se 3.2 m door)
-func _vehicle_spot_free(pos: Vector3) -> bool:
+## Pos se nazdeeki building ki deewar tak ka gap (metres). Bada = zyada khali.
+func _building_gap(pos: Vector3) -> float:
+	var gap := 1e9
 	for spot in _building_spots:
-		var bcenter: Vector3 = spot["pos"]
-		if Vector2(pos.x - bcenter.x, pos.z - bcenter.z).length() < float(spot["radius"]) + 2.4:
-			return false
+		var center: Vector3 = spot["pos"]
+		var d := Vector2(pos.x - center.x, pos.z - center.z).length()
+		gap = minf(gap, d - float(spot.get("max_half", spot["radius"])))
+	return gap
+
+
+## Doosri gaadi se door hai? (4.5 m — gaadi 4.4 m lambi hai)
+func _vehicle_spot_free(pos: Vector3) -> bool:
 	for spot in _vehicle_spots:
 		var vcenter: Vector3 = spot["pos"]
-		if Vector2(pos.x - vcenter.x, pos.z - vcenter.z).length() < 3.2:
+		if Vector2(pos.x - vcenter.x, pos.z - vcenter.z).length() < 4.5:
 			return false
 	return true
 

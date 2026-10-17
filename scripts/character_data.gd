@@ -65,7 +65,10 @@ static func get_character(index: int) -> Dictionary:
 	return list[absi(index) % list.size()]
 
 
-static func get_name(index: int) -> String:
+## NOTE: naam `display_name` hai, `get_name` nahi — GDScript (Script resource) ka apna
+## `get_name()` 0 arguments leta hai, isliye purana call runtime pe "Invalid call ...
+## Expected 0 arguments" deta tha (CI ke map smoke test ne pakda).
+static func display_name(index: int) -> String:
 	return String(get_character(index).get("name", "Player"))
 
 

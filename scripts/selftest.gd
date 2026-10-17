@@ -195,7 +195,7 @@ func _run_phase_1_real_assets() -> void:
 	for i in CHARACTERS.count():
 		var model_name := CHARACTERS.get_model(i)
 		if Loader.find_path(model_name, "characters").is_empty():
-			char_missing.append("%s->%s" % [CHARACTERS.get_name(i), model_name])
+			char_missing.append("%s->%s" % [CHARACTERS.display_name(i), model_name])
 	if any_downloaded and Loader.has_models("characters"):
 		_check(char_missing.is_empty(), "10 characters ke models mile (missing: %s)" % str(char_missing))
 
