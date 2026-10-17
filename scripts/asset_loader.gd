@@ -3,6 +3,8 @@ extends RefCounted
 ## AssetLoader — download kiye gaye CC0 models (Quaternius) runtime pe load karta hai.
 ##
 ## Ye file HYBRID asset system ka "loader" hissa hai:
+##   0. `assets/downloaded_obj/<category>/` me OBJ source models hote hain (weapons, nature,
+##      characters, vehicles) — build ke waqt tools/obj2glb.py unhe bhi .glb banata hai.
 ##   1. `assets/downloaded/<category>/` me tumhare upload kiye FBX source models rehte hain.
 ##      Us folder me `.gdignore` pada hai, isliye Godot unhe scan NAHI karta
 ##      (Godot 4 FBX import nahi kar sakta — aur bade packs pe import atak jata hai).
@@ -27,8 +29,9 @@ extends RefCounted
 ##                          FBX (assets/downloaded) aur OBJ (assets/downloaded_obj) dono
 ##                          isi me convert hote hain (dekho tools/fbx2glb.py + tools/obj2glb.py).
 ## "assets/downloaded/"     = FBX source + `.gdignore` (Godot inhe scan nahi karta).
-## "assets/downloaded_obj/" = OBJ/MTL source (weapons) + `.gdignore`. Yahan bhi agar koi
-##                          khud .glb daal de to wo mil jayega — warna skip.
+## "assets/downloaded_obj/" = OBJ/MTL source (weapons + nature + characters + vehicles)
+##                          + `.gdignore`. Yahan bhi agar koi khud .glb daal de to
+##                          wo mil jayega — warna skip.
 const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/downloaded/",
 		"res://assets/downloaded_obj/"]
 
@@ -41,24 +44,34 @@ const EXTENSIONS: Array[String] = [".glb", ".gltf", ".obj", ".fbx"]
 ## Saari categories
 const CATEGORIES: Array[String] = ["weapons", "nature", "characters", "vehicles"]
 
-## character files ke asli naam — male_1..male_8 / female_1..female_8 alias inhi pe jaate hain
+## character files ke asli naam — male_1..male_8 / female_1..female_8 alias inhi pe jaate hain.
+## Spec: **male_1 = Male_Suit** (game roster: Rey = male_1). Baaki files usi order me.
+## Pehle 4 normal-poly models, aakhri 4 "Smooth" (zyada detail wale) models.
 const CHARACTER_FILES := {
-	"male": ["Male_Casual", "Male_LongSleeve", "Male_Shirt", "Male_Suit",
-		"Smooth_Male_Casual", "Smooth_Male_LongSleeve", "Smooth_Male_Shirt", "Smooth_Male_Suit"],
-	"female": ["Female_Casual", "Female_TankTop", "Female_Dress", "Female_Alternative",
-		"Smooth_Female_Casual", "Smooth_Female_TankTop", "Smooth_Female_Dress",
-		"Smooth_Female_Alternative"],
+	"male": ["Male_Suit", "Male_Casual", "Male_Shirt", "Male_LongSleeve",
+		"Smooth_Male_Suit", "Smooth_Male_Casual", "Smooth_Male_Shirt", "Smooth_Male_LongSleeve"],
+	"female": ["Female_Casual", "Female_Dress", "Female_Alternative", "Female_TankTop",
+		"Smooth_Female_Casual", "Smooth_Female_Dress", "Smooth_Female_Alternative",
+		"Smooth_Female_TankTop"],
 }
 
-## vehicle aliases: jo maanga gaya naam -> asli files (upload me sirf 5 vehicles hain)
+## vehicle aliases: jo maanga gaya naam -> asli OBJ files (7 uploaded).
+## Game ka code purane alias use karta hai (cop_car / sedan / sports_2...) taaki
+## weapon/HUD waghaira na badalna pade — yahan mapping hai.
 const VEHICLE_FILES := {
 	"cop_car": ["Cop"],
+	"cop": ["Cop"],
 	"taxi": ["Taxi"],
 	"suv": ["SUV"],
-	"sedan": ["Sedan", "SportsCar"],
-	"sedan_2": ["Sedan2", "SportsCar2"],
+	"normalcar1": ["NormalCar1"],
+	"normalcar2": ["NormalCar2"],
+	"sedan": ["NormalCar1"],          # purana alias -> NormalCar1
+	"normal_1": ["NormalCar1"],
+	"normal_2": ["NormalCar2"],
+	"sedan_2": ["NormalCar2"],        # purana alias -> NormalCar2
 	"sports": ["SportsCar"],
-	"sports_2": ["SportsCar2"],
+	"street": ["SportsCar"],
+	"sports_2": ["SportsCar2"],       # spec: 1 random SportsCar2
 }
 
 ## prefix -> asli FBX naam ka pattern (weapons + nature ke liye)
@@ -91,11 +104,14 @@ const SPECIAL_ALIASES := {
 	"nature": {
 		"plant_flowers": ["Plant_Flowers"],
 		"flowers": ["Plant_Flowers"],
+		"flower": ["Flower_1"],
 		"grass_small": ["Grass_Small"],
 		"grass_large": ["Grass_Large"],
 		"grass_large_2": ["Grass_Large_Extruded"],
 		"grass_large_extruded": ["Grass_Large_Extruded"],
-		"pine_5": ["PineTree_1"],          # sirf 4 pine files hain -> 5th alias pehle pe
+		"bush": ["Bush"],
+		"bush_large": ["Bush_Large"],
+		"bush_small": ["Bush_Small"],
 	},
 	"characters": {
 		"female_alternative": ["Female_Alternative"],

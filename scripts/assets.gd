@@ -849,6 +849,46 @@ static func grass_tuft(scale_f: float = 1.0, variant: int = 0) -> Node3D:
 	return root
 
 
+## Ek nature model ka single Mesh (MultiMeshInstance3D ke liye).
+## MultiMesh ek hi Mesh ka instance baar-baar draw karta hai — isliye model me
+## **ek hi mesh node** hona chahiye (hamara OBJ->GLB aisa hi banata hai).
+## Na mile / zyada mesh nodes hon to null (caller alag-alag nodes laga dega).
+static func nature_mesh(kind: String, variant: int) -> Mesh:
+	var names: Array = NATURE_MODELS.get(kind, [])
+	if names.is_empty():
+		return null
+	var scene := Loader.load_model(str(names[absi(variant) % names.size()]), "nature")
+	if scene == null:
+		return null
+	var inst := scene.instantiate()
+	if not (inst is Node3D):
+		inst.free()
+		return null
+	var meshes := _mesh_nodes(inst, 0, [])
+	if meshes.size() != 1:
+		inst.free()
+		return null
+	var node := meshes[0]
+	# converter geometry ko node me hi bake karta hai; agar transform bacha hua ho to
+	# MultiMesh galat jagah lagega -> aise model ko MultiMesh me na daalo.
+	if not node.transform.is_equal_approx(Transform3D.IDENTITY):
+		inst.free()
+		return null
+	var mesh: Mesh = node.mesh
+	inst.free()
+	return mesh
+
+
+## Kisi node ke saare visual children (MeshInstance3D, Label3D, ...) ka render layer
+## set karo. Player ka body layer 2 pe jata hai aur uske apne camera ka cull_mask
+## layer 2 ko nahi dekhta (FPS me apna body na dikhe).
+static func set_render_layer(node: Node, layer: int) -> void:
+	if node is VisualInstance3D:
+		(node as VisualInstance3D).layers = layer
+	for child in node.get_children():
+		set_render_layer(child, layer)
+
+
 # ---------------------------------------------------- hybrid load / fallback --
 
 ## Downloaded model try karo -> Node3D (collision ke saath) ya null.
@@ -949,13 +989,14 @@ static func _ensure_collision(node: Node3D, kind: String, aabb: AABB = AABB()) -
 	if box.size == Vector3.ZERO:
 		return null      # kuch mesh hi nahi mila
 
+	# Ped = CapsuleShape3D (r = 0.5m, spec). Baaki = BoxShape3D.
+	if kind == "tree":
+		return _ensure_capsule_collision(node, box, 0.5)
+
 	# kind ke hisaab se kitna mota box (ped ke patte halke hote hain -> patla box)
 	var radius_scale := 1.0
 	var height_scale := 1.0
 	match kind:
-		"tree":
-			radius_scale = 0.55
-			height_scale = 0.85
 		"bush":
 			radius_scale = 0.70
 			height_scale = 0.90
@@ -980,6 +1021,26 @@ static func _ensure_collision(node: Node3D, kind: String, aabb: AABB = AABB()) -
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
+	col.shape = shape
+	body.add_child(col)
+	node.add_child(body)
+	return body
+
+
+## Ped ke liye CapsuleShape3D (gol tana). `radius` spec se (0.5 m).
+## Capsule ki height me dono gol caps bhi aate hain, isliye height >= 2*radius rakhte hain.
+static func _ensure_capsule_collision(node: Node3D, box: AABB, radius: float) -> StaticBody3D:
+	var height: float = maxf(box.size.y, radius * 2.2)
+	var body := StaticBody3D.new()
+	body.name = "Collision"
+	body.collision_layer = 1
+	body.position = Vector3(box.position.x + box.size.x * 0.5, height * 0.5,
+			box.position.z + box.size.z * 0.5)
+
+	var col := CollisionShape3D.new()
+	var shape := CapsuleShape3D.new()
+	shape.radius = radius
+	shape.height = height
 	col.shape = shape
 	body.add_child(col)
 	node.add_child(body)

@@ -8,11 +8,15 @@ extends CharacterBody3D
 ## Value badalni ho to neeche sirf max_health ka number badal do.
 ## Marne pe main.gd +10 score deta hai (signal "died" ke through).
 ##
-## BODY (Phase 4): pehle yahan ek rang-biranga CAPSULE box tha. Ab downloaded CC0
+## BODY (Phase 4): pehle yahan ek rang-biranga CAPSULE box tha. Ab downloaded OBJ
 ## character model (male_1..male_5 / female_1..female_5 me se random) lagta hai,
 ## uspe gehra laal tint (0.55, 0.12, 0.12), height 1.8m, aur chalte waqt
-## haath-pair sine-wave se hilte hain. Model na mile to kuch nahi lagta —
+## sine-wave animation chalti hai. Model na mile to kuch nahi lagta —
 ## phir bhi poora gameplay (chase/attack/damage/score) chalta rehta hai.
+##
+## NOTE (animation): hamare OBJ characters ek hi mesh hote hain (alag leg_l/arm_l
+## nodes nahi). Aise me poora body halka bounce + side-sway karta hai (chalne jaisa).
+## Jin models me limb nodes mil jayein (purana FBX pack) unke haath-pair alag hilte hain.
 ##
 
 signal died(enemy: Node3D)
@@ -56,6 +60,7 @@ var _arm_l: Node3D = null
 var _arm_r: Node3D = null
 var _walk_phase: float = 0.0
 var _moving: bool = false
+var _has_limbs: bool = false            ## alag leg_l/arm_l nodes mile?
 var _character_name: String = ""
 
 
@@ -95,6 +100,7 @@ func _build_body() -> void:
 	_leg_r = model.find_child("leg_r", true, false) as Node3D
 	_arm_l = model.find_child("arm_l", true, false) as Node3D
 	_arm_r = model.find_child("arm_r", true, false) as Node3D
+	_has_limbs = _leg_l != null and _leg_r != null and _arm_l != null and _arm_r != null
 
 	if _character_name.is_empty():
 		_character_name = pick.capitalize().replace("_", " ")
@@ -201,25 +207,32 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 
-## Chalte waqt haath-pair hilana (sine wave). Model na ho to kuch nahi hota.
-## Har limb ka node apne pivot pe hai (tools/fbx2glb.py character ke chhote tukde
-## banata hai: leg_l/leg_r ka pivot kamar pe, arm_l/arm_r ka pivot kandhe pe).
+## Chalte waqt sine-wave animation. Model na ho to kuch nahi hota.
+##
+## Do tarah ke models hain:
+##   * alag limb nodes (leg_l/leg_r/arm_l/arm_r) -> wahi hilte hain
+##   * ek hi mesh (hamare OBJ characters) -> poora body bounce + side sway karta hai
+##     (chalne jaisa lagta hai; limb alag nahi hil sakte kyunki wo alag nodes hi nahi)
 func _animate_limbs(delta: float) -> void:
 	if _body == null:
 		return
 	var speed := animation_speed if _moving else 1.6
 	_walk_phase += delta * speed
+
+	if not _has_limbs:
+		var bounce := sin(_walk_phase * 2.0) * (0.05 if _moving else 0.012)
+		var sway := sin(_walk_phase) * (0.07 if _moving else 0.012)
+		_body.position.y = bounce
+		_body.rotation.z = sway
+		return
+
 	var leg_swing := sin(_walk_phase) * (0.55 if _moving else 0.05)
 	var arm_swing := -leg_swing * 0.7
 
-	if _leg_l != null:
-		_leg_l.rotation.x = leg_swing
-	if _leg_r != null:
-		_leg_r.rotation.x = -leg_swing
-	if _arm_l != null:
-		_arm_l.rotation.x = arm_swing
-	if _arm_r != null:
-		_arm_r.rotation.x = -arm_swing
+	_leg_l.rotation.x = leg_swing
+	_leg_r.rotation.x = -leg_swing
+	_arm_l.rotation.x = arm_swing
+	_arm_r.rotation.x = -arm_swing
 
 
 # ---------------------------------------------------------------- damage ----

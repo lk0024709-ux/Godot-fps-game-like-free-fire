@@ -11,8 +11,9 @@ extends CharacterBody3D
 ## auto/semi, pellets). Player sirf trigger dabaya gaya hai ya nahi wo dekhta hai
 ## aur bullet spawn karta hai.
 ##
-## APNA BODY (Phase 4): character_data.gd se character chuno -> downloaded CC0 model
-## se poora humanoid banta hai aur player ke neeche lagta hai. Neeche dekhne pe apne
+## APNA BODY (Phase 4): character_data.gd se character chuno -> downloaded OBJ model
+## se poora humanoid banta hai. Body render layer 2 pe hai aur camera use nahi dekhta
+## (spec: FPS me apna body invisible). Neeche dekhne pe apne
 ## kapde/arm dikhte hain. Sirf SAR chhupaya jata hai (camera usi ke andar hai).
 ## Model na mile to kuch nahi lagta — pehle jaisa invisible body (koi error nahi).
 ##
@@ -111,18 +112,19 @@ func _build_body() -> void:
 
 	model.name = "Body"
 	# NOTE: body me koi collision shape nahi hota (sirf dikhta hai) — player ki apni
-	# capsule hi takkar handle karti hai (layer 2, isliye goli lagti nahi).
+	# capsule hi takkar handle karti hai.
 	add_child(model)
-
-	# Camera sar ke ANDAR hai — isliye sirf sar chhupao, baaki body dikhti rahegi
-	var head_node := model.find_child("head", true, false)
-	if head_node is Node3D:
-		(head_node as Node3D).visible = false
-	# NOTE: agar poora body hi chhupana ho to show_body = false kar do (HUD/Inspector se),
-	# ya model ko layer 2 pe bhejo aur camera ka cull_mask se hatao.
 
 	if name_tag:
 		_add_name_tag(model, CHARACTERS.get_name(character_index))
+
+	# ---- FPS invisibility (spec) ----
+	# Body + naam ka tag render layer 2 pe bhejo, aur apne camera ka cull_mask se
+	# layer 2 hata do. Matlab: apni body khud ko nahi dikhti (koi first-person me
+	# apna sar/chest nahi dekhna chahta), par light/shadow pe asar rehta hai aur
+	# koi doosra camera (future third-person) use dekh sakta hai.
+	ASSETS.set_render_layer(model, CHARACTERS.PLAYER_BODY_LAYER)
+	camera.cull_mask = camera.cull_mask & ~(1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
 
 
 ## Sar ke upar chhota naam (Label3D) — apne body pe bhi lagta hai taaki agar

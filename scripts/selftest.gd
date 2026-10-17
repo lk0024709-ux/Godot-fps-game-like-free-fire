@@ -7,8 +7,8 @@ extends Node3D
 ##   2. weapon_data.gd ke "model" naam sach me match karte hain ("ar_5" -> AssaultRifle_5)
 ##   3. build_weapon_model() downloaded model ke saath sahi ban raha hai
 ##      (scale, muzzle node, material override, shadow off)
-##   4. character model 1.8m aur pair y=0 pe aata hai + limb nodes (leg_l/arm_r) milte hain
-##   5. nature props (tree/rock/grass/plant) aur vehicle model bante hain
+##   4. character model 1.8m aur pair y=0 pe aata hai
+##   5. nature props (tree/rock/grass/plant), vehicles aur BUILDINGS bante hain
 ##   6. FAIL-SOFT: base_dir_override ko khali folder pe set kar ke dekhte hain ki
 ##      sab kuch procedural fallback se phir bhi ban jaye (koi crash nahi)
 ##
@@ -24,6 +24,7 @@ const Loader := preload("res://scripts/asset_loader.gd")
 const Assets := preload("res://scripts/assets.gd")
 const DATA := preload("res://scripts/weapon_data.gd")
 const CHARACTERS := preload("res://scripts/character_data.gd")
+const BUILDING := preload("res://scripts/building_builder.gd")
 
 ## Download kuch nahi hua ho to bhi kitne tests chalne chahiye (fail-soft test me kam)
 var _checks: int = 0
@@ -51,8 +52,10 @@ func _run_phase_1_real_assets() -> void:
 	_notes.append("loader: " + str(stats))
 	for line in Loader.report_lines():
 		print("  " + line)
-	# Weapons folder ke saare model naam (CI log me poora scan dikh jaye)
-	print("  weapons ke models: " + ", ".join(Loader.list_models("weapons")))
+	# Har category ke saare model naam (CI log me poora scan dikh jaye)
+	for category in Loader.CATEGORIES:
+		print("  %s ke models (%d): %s" % [category, Loader.list_models(category).size(),
+				", ".join(Loader.list_models(category))])
 	for category in Loader.CATEGORIES:
 		_check(stats.get(category, 0) >= 0, "loader: %s listing chali" % category)
 
@@ -158,15 +161,80 @@ func _run_phase_1_real_assets() -> void:
 			add_child(prop)
 			prop.queue_free()
 
-	var vehicle := Assets.build_vehicle_model("taxi")
+	# ---- 4b) downloaded model naam sach me resolve ho rahe hain? ----
+	var nature_wanted: Array[String] = [
+		"pine_1", "pine_2", "pine_3", "pine_4", "pine_5",
+		"rock_1", "rock_2", "rock_3", "rock_4", "rock_5",
+		"plant_1", "plant_2", "plant_flowers",
+		"grass_small", "grass_large", "grass_large_2",
+	]
+	var nature_missing: Array[String] = []
+	for nm in nature_wanted:
+		if Loader.find_path(nm, "nature").is_empty():
+			nature_missing.append(nm)
+	if any_downloaded and Loader.has_models("nature"):
+		_check(nature_missing.is_empty(), "nature ke saare models mile (missing: %s)" % str(nature_missing))
+
+	var char_missing: Array[String] = []
+	for i in CHARACTERS.count():
+		var model_name := CHARACTERS.get_model(i)
+		if Loader.find_path(model_name, "characters").is_empty():
+			char_missing.append("%s->%s" % [CHARACTERS.get_name(i), model_name])
+	if any_downloaded and Loader.has_models("characters"):
+		_check(char_missing.is_empty(), "10 characters ke models mile (missing: %s)" % str(char_missing))
+
+	var vehicle_wanted: Array[String] = ["Cop", "NormalCar1", "NormalCar2", "Taxi", "SUV",
+			"SportsCar", "SportsCar2"]
+	var vehicle_missing: Array[String] = []
+	for nm in vehicle_wanted:
+		if Loader.find_path(nm, "vehicles").is_empty():
+			vehicle_missing.append(nm)
+	if any_downloaded and Loader.has_models("vehicles"):
+		_check(vehicle_missing.is_empty(), "7 vehicles ke models mile (missing: %s)" % str(vehicle_missing))
+
+	# tree pe CapsuleShape3D collision (spec: r = 0.5)
+	var tree_prop := Assets.tree(1.0, 0)
+	if tree_prop != null:
+		add_child(tree_prop)
+		var capsule_found := false
+		for child in tree_prop.get_children():
+			if child is StaticBody3D:
+				for col in (child as StaticBody3D).get_children():
+					if col is CollisionShape3D and (col as CollisionShape3D).shape is CapsuleShape3D:
+						capsule_found = true
+		_check(capsule_found, "ped pe CapsuleShape3D collision hai")
+		tree_prop.queue_free()
+
+	var vehicle := Assets.build_vehicle_model("Taxi")
 	if vehicle == null:
-		vehicle = Assets.fallback_vehicle("taxi", Color(0.9, 0.8, 0.2))
-	_check(vehicle != null, "vehicle bana (taxi)")
+		vehicle = Assets.fallback_vehicle("Taxi", Color(0.9, 0.8, 0.2))
+	_check(vehicle != null, "vehicle bana (Taxi)")
 	if vehicle != null:
 		add_child(vehicle)
 		vehicle.queue_free()
 
-	# ---------- 5) FAIL-SOFT test: assets gayab ----------
+	# ---- 5) BUILDINGS: chaaron types bante hain, light + solid walls ke saath ----
+	for kind in ["small_house", "big_house", "barn", "shop"]:
+		var building := BUILDING.build(kind)
+		_check(building != null, "building bana: %s" % kind)
+		if building == null:
+			continue
+		add_child(building)
+		var solids := 0
+		var lights := 0
+		for child in building.get_children():
+			if child is StaticBody3D:
+				solids += 1
+			elif child is OmniLight3D:
+				lights += 1
+		_check(solids >= 6, "%s me solid pieces hain (%d)" % [kind, solids])
+		_check(lights == 1, "%s me 1 interior light hai (%d)" % [kind, lights])
+		var foot: Vector2 = BUILDING.footprint(kind)
+		_check(foot.x >= 6.0 and foot.y >= 6.0, "%s ka footprint theek hai (%.1f x %.1f)"
+				% [kind, foot.x, foot.y])
+		building.queue_free()
+
+	# ---------- 6) FAIL-SOFT test: assets gayab ----------
 	# loader ko aise folder pe set karte hain jahan kuch nahi hai -> sab kuch
 	# procedural fallback se banna chahiye, aur koi crash nahi hona chahiye.
 	Loader.base_dir_override = "res://assets/downloaded_missing/"

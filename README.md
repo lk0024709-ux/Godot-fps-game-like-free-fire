@@ -130,29 +130,32 @@ scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
-scripts/main.gd                # Game manager: arena banata hai, enemies spawn karta hai, score + game over
+scripts/main.gd                # Game manager: arena + buildings + nature + gaadiyaan banata hai, enemies/score/game over
 scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0 model (sirf data — yahan numbers badlo)
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
 scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
 scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
 scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage, body model
 scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death, humanoid model
-scripts/asset_loader.gd        # Downloaded CC0 models load karta hai (fail-safe: na mile to null -> procedural)
-scripts/selftest.gd            # Automatic asset test (CI step 8d) — 171 checks: loader/muzzle/height/fail-soft
+scripts/asset_loader.gd        # Downloaded models load karta hai, char/vehicle/nature aliases ke saath (fail-safe: na mile to null -> procedural)
+scripts/building_builder.gd    # Enterable buildings (ghar/barn/dukaan): deewar ke tukde + darwaza + light + furniture
+scripts/selftest.gd            # Automatic asset test (CI step 8d): loader/muzzle/height/buildings/fail-soft
 scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
 scenes/selftest.tscn           # Selftest scene (assets check karta hai, phone pe bhi chala sakte ho)
 
 assets/downloaded/             # FBX source (nature/characters/vehicles) — .gdignore pada hai, Godot inhe scan nahi karta
-assets/downloaded_obj/Weapons/ # OBJ + MTL source (40 guns) — .gdignore pada hai (Godot scan nahi karta)
+assets/downloaded_obj/        # OBJ + MTL source: Weapons 40, Nature 66, Characters 16, Vehicles 7
+                               #   .gdignore pada hai (Godot scan nahi karta; CI .glb banata hai)
 assets/models/                 # CI ne banaye .glb (Godot sirf yahin se model uthata hai) — commit NAHI hote
-tools/obj2glb.py               # OBJ+MTL -> GLB converter (weapons ke liye, pure python)
+tools/obj2glb.py               # OBJ+MTL -> GLB converter (weapons/nature/characters/vehicles, pure python)
 tools/fbx2glb.py               # FBX 7.x -> GLB converter (pure python, koi pip/numpy nahi)
 tools/glbcheck.py              # .glb files ki jaanch (header/accessor/normals) — CI step 7e
 tools/gdcheckrefs.py           # Har Helper.func() call aur parameter count ki cross-check — CI step 8b
 docs/model-assets-notes.md     # Ye sab kaise kaam karta hai (aur .gdignore kyun hai)
-docs/obj-weapons-report.md     # OBJ weapons pack ka poora report (mapping + verify checklist)
+docs/obj-weapons-report.md     # OBJ weapons pack ka report (mapping + verify checklist)
+docs/obj-all-assets-report.md  # Nature + characters + vehicles + buildings ka report
 docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf — isi se verify hua)
 
 .github/workflows/build-apk.yml # GitHub Actions: FBX->GLB convert + Godot 4.2.2 + keystore + selftest + APK export + upload
@@ -170,6 +173,8 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 | Enemy speed / HP / damage | `scenes/enemy.tscn` khologe to inspector me dikhega, ya `scripts/enemy.gd` ke `@export` defaults |
 | Kitne enemies + spawn speed | `scenes/main.tscn` → `Main` node ke inspector me (`max_enemies`, `spawn_interval`) |
 | Maidan ka size / cover boxes | `scripts/main.gd` → `arena_size` aur `_obstacles` list |
+| Buildings (kitni/kahan) | `scripts/main.gd` → `BUILDING_PLAN` (zone ke hisaab se list) |
+| Building ka size / darwaza / furniture | `scripts/building_builder.gd` → `SIZES`, `DOOR_SIZE`, `_add_furniture()` |
 | Ped / patthar / jhaadi / ghaas ki ginti | `scripts/main.gd` → `tree_count`, `rock_count`, `bush_count`, `grass_count` |
 | Nature ka layout (kahan kya uge) | `scripts/main.gd` → `nature_seed` (same seed = same map) |
 | Kisi bhi gun ka damage / ammo / speed | `scripts/weapon_data.gd` → us gun ki line (ek hi line me sab hai) |

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""OBJ (+MTL) -> GLB converter for the CC0 Quaternius weapon pack in assets/downloaded_obj/.
+"""OBJ (+MTL) -> GLB converter for the CC0 Quaternius packs in assets/downloaded_obj/.
 
 Why this exists
 ---------------
-The game needs `assets/models/weapons/<Name>.glb` (Godot imports .glb natively and
+The game needs `assets/models/<category>/<Name>.glb` (Godot imports .glb natively and
 `scripts/asset_loader.gd` loads those at runtime - exactly like the FBX pack in
 `assets/downloaded/`). Godot 4.2 has no reliable .obj pipeline of its own, so the CI
 workflow runs this script once per build (workflow step "7d-obj") and writes a .glb
@@ -11,6 +11,19 @@ next to every .obj. Pure Python 3 stdlib - no numpy, no external converter.
 
     python3 tools/obj2glb.py assets/downloaded_obj --out-root assets/models
     python3 tools/obj2glb.py assets/downloaded_obj/Weapons/Pistol_1.obj --out-dir /tmp/x
+
+Four modes (auto-detected from the source folder name)
+------------------------------------------------------
+    weapons/    -> "weapon": barrel +X -> -Z, longest side normalised to 1.0 m
+    nature/     -> "prop":   Y-up as authored, real metres kept (trees 4-8 m)
+    characters/ -> "character": Y-up, rotated 180 deg so the face is -Z, real metres
+    vehicles/   -> "vehicle": Y-up, rotated 180 deg so headlights are -Z, real metres
+
+Characters in this pack look towards +Z (measured from the Eyes material vertices) and
+the cars look towards +Z too (Headlights material), while the game wants -Z forward
+(same as weapons), hence the baked 180 deg turn. Nature is left untouched - trees must
+stay upright (the weapon rule "longest axis -> Z" would lay them flat, which is exactly
+the bug this mode switch prevents).
 
 What it does per model
 ----------------------
@@ -156,14 +169,41 @@ def winding_is_inverted(data, sample=400):
     return (ratio < 0.4), f"{agree}/{total} face normals match"
 
 
-def orient_matrix(points, report):
-    """Godot axes: +Y up, barrel -Z (is pack me barrel +X pe hota hai)."""
+## Source folder -> conversion mode. Unknown folder = "prop" (safest: kuch ghumao mat).
+MODE_BY_FOLDER = {
+    "weapons": "weapon",
+    "nature": "prop",
+    "characters": "character",
+    "vehicles": "vehicle",
+}
+
+
+def mode_for_path(path, forced="auto"):
+    if forced and forced != "auto":
+        return forced
+    folder = os.path.basename(os.path.dirname(os.path.abspath(path))).lower()
+    return MODE_BY_FOLDER.get(folder, "prop")
+
+
+def orient_matrix(points, report, mode="weapon", muzzle_axis="+x"):
+    """Game axes: +Y up, aage (muzzle / face / headlights) -Z."""
+    if mode in ("character", "vehicle"):
+        # Is pack me character ka muh aur gaadi ke headlights +Z pe hain (materials ke
+        # vertices se naapa gaya) -> 180 deg ghumao taaki -Z aage ho jaye.
+        report["orient"] = "Y-up, 180 deg (aage +Z -> -Z)"
+        return mat_rot_y(180.0)
+    if mode == "prop":
+        # Ped/patthar/ghaas: jaisa author ne banaya waisa hi (Y up). Koi rotation nahi.
+        report["orient"] = "Y-up (as authored)"
+        return mat_identity()
+
     lo, hi = aabb(points)
     ext = [hi[i] - lo[i] for i in range(3)]
     longest = max(range(3), key=lambda i: ext[i])
     if longest == 0:
-        O = mat_rot_y(90.0)
-        note = "length X -> Z (rotY 90: muzzle +X -> -Z)"
+        O = mat_rot_y(90.0 if muzzle_axis == "+x" else -90.0)
+        note = "length X -> Z (rotY %s: muzzle %s -> -Z)" % ("90" if muzzle_axis == "+x" else "-90",
+                                                             muzzle_axis.upper())
     elif longest == 1:
         O = mat_rot_x(-90.0)
         note = "length Y -> Z (rotX -90)"
@@ -171,6 +211,9 @@ def orient_matrix(points, report):
         O = mat_identity()
         note = "length Z (as-is)"
     report["orient"] = note
+
+    if mode != "weapon":
+        return O
 
     # ---- ambiguity warning (kabhi khud flip nahi karte — dekho docs) ----
     pts = [mat_apply(O, p) for p in points]
@@ -188,10 +231,11 @@ def orient_matrix(points, report):
     return O
 
 
-def convert(path, pack_muzzle_axis="+x"):
+def convert(path, pack_muzzle_axis="+x", mode="auto"):
     base = os.path.splitext(os.path.basename(path))[0]
+    mode = mode_for_path(path, mode)
     data = parse_obj(path)
-    report = {"file": os.path.basename(path), "kind": "weapon",
+    report = {"file": os.path.basename(path), "kind": mode,
               "src_bytes": os.path.getsize(path),
               "verts": len(data["verts"]), "polys": len(data["polys"])}
     if not data["verts"] or not data["polys"]:
@@ -208,13 +252,25 @@ def convert(path, pack_muzzle_axis="+x"):
         else ("theek (" + winding_note + ")")
 
     # ---- orientation + size ----
-    O = orient_matrix(data["verts"], report)
+    O = orient_matrix(data["verts"], report, mode, pack_muzzle_axis)
     pts = [mat_apply(O, v) for v in data["verts"]]
     lo, hi = aabb(pts)
     ext = (hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])
-    biggest = max(ext)
-    s = 1.0 / biggest if biggest > 1e-6 else 1.0
-    pivot = ((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5, (lo[2] + hi[2]) * 0.5)
+
+    if mode == "weapon":
+        # Weapon: longest side -> 1.0 m (assets.gd baad me asli target lambai lagata hai)
+        biggest = max(ext)
+        s = 1.0 / biggest if biggest > 1e-6 else 1.0
+        pivot = ((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5, (lo[2] + hi[2]) * 0.5)
+        report["units"] = "normalised (longest = 1.0 m)"
+    else:
+        # Nature / character / vehicle: asli metres rakho (ped 4-8m, gaadi 4m).
+        # Sirf X/Z centre karo aur base y=0 par bithao — game ka har builder isi
+        # convention pe chalta hai (ped zameen se upar, gaadi ke pahiye y=0).
+        s = 1.0
+        pivot = ((lo[0] + hi[0]) * 0.5, lo[1], (lo[2] + hi[2]) * 0.5)
+        report["units"] = "metres (as authored)"
+
     report["aabb_src"] = [[round(v, 2) for v in lo], [round(v, 2) for v in hi]]
     report["aabb_out"] = [round(v * s, 3) for v in ext]
     report["scale"] = round(s, 5)
@@ -281,7 +337,9 @@ def main(argv):
     ap.add_argument("--out-root", default=None,
                     help="<out-root>/<category>/<file>.glb (category = source folder, lowercase)")
     ap.add_argument("--muzzle-axis", default="+x", choices=["+x", "-x"],
-                    help="source me barrel kis taraf hai (+x = default, is pack ka rule)")
+                    help="weapons: source me barrel kis taraf hai (+x = default, is pack ka rule)")
+    ap.add_argument("--mode", default="auto", choices=["auto", "weapon", "prop", "character", "vehicle"],
+                    help="auto = source folder se (weapons/nature/characters/vehicles)")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--report", default="", help="JSON report ka path")
     args = ap.parse_args(argv)
@@ -303,7 +361,7 @@ def main(argv):
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, os.path.splitext(os.path.basename(f))[0] + ".glb")
         try:
-            data, report = convert(f, args.muzzle_axis)
+            data, report = convert(f, args.muzzle_axis, args.mode)
         except Exception as exc:                      # fail-soft: koi bhi galti -> skip
             print("FAIL %s: %r" % (f, exc))
             continue
@@ -325,8 +383,12 @@ def main(argv):
                   % (os.path.basename(f), report["src_bytes"] / 1024, len(data) / 1024,
                      report["verts"], report["polys"], len(report.get("materials", [])),
                      report["winding"], flag))
-    print("\n%d/%d converted   %.2fMB -> %.2fMB   (warnings: %d)"
-          % (ok, len(files), total_in / 1024 / 1024, total_out / 1024 / 1024, warnings))
+    by_mode = {}
+    for rep in reports:
+        by_mode[rep["kind"]] = by_mode.get(rep["kind"], 0) + 1
+    print("\n%d/%d converted   %.2fMB -> %.2fMB   (warnings: %d)   %s"
+          % (ok, len(files), total_in / 1024 / 1024, total_out / 1024 / 1024, warnings,
+             ", ".join("%s:%d" % kv for kv in sorted(by_mode.items()))))
     if args.report:
         with open(args.report, "w") as fh:
             json.dump({"converted": ok, "total": len(files), "src_bytes": total_in,

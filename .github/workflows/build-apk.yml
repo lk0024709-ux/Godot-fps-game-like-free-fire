@@ -229,10 +229,12 @@ jobs:
             echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
           fi
 
-      # ---- 7d) OBJ -> GLB conversion (weapons ka asli source) ----
-      # assets/downloaded_obj/Weapons/*.obj + *.mtl -> assets/models/weapons/*.glb
-      # (Godot 4 .obj import nahi karta, isliye build ke waqt convert hota hai)
-      - name: "7d) OBJ -> GLB conversion (weapons)"
+      # ---- 7d) OBJ -> GLB conversion (saare OBJ packs ka asli source) ----
+      # assets/downloaded_obj/{Weapons,Nature,Characters,Vehicles}/*.obj + *.mtl
+      #   -> assets/models/{weapons,nature,characters,vehicles}/*.glb
+      # (Godot 4 .obj import nahi karta, isliye build ke waqt convert hota hai.
+      #  Har folder ka mode alag hai: weapons ka barrel -Z, baaki Y-up — dekho tools/obj2glb.py)
+      - name: "7d) OBJ -> GLB conversion (weapons + nature + characters + vehicles)"
         continue-on-error: true
         run: |
           set -uo pipefail
@@ -259,10 +261,17 @@ jobs:
             --report build/obj-report.json 2>&1 | tee -a "$DIAG" || \
             echo "::warning::OBJ conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
 
+          for CAT in weapons nature characters vehicles; do
+            CAT_COUNT=$(find "$OUT/$CAT" -name '*.glb' 2>/dev/null | wc -l)
+            echo "  $CAT: $CAT_COUNT glb" | tee -a "$DIAG"
+          done
           GLB_COUNT=$(find "$OUT/weapons" -name '*.glb' 2>/dev/null | wc -l)
-          echo "weapon glb ready: $GLB_COUNT" | tee -a "$DIAG"
           if [ "$GLB_COUNT" -eq 0 ]; then
             echo "::warning::ek bhi weapon glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
+          fi
+          NATURE_GLB=$(find "$OUT/nature" -name '*.glb' 2>/dev/null | wc -l)
+          if [ "$NATURE_GLB" -eq 0 ]; then
+            echo "::warning::koi nature glb nahi bana -> procedural ped/patthar chalenge" | tee -a "$DIAG"
           fi
 
           # Raw OBJ/MTL build workspace se hata do (repo me safe hain):
