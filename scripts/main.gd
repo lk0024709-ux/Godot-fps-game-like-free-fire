@@ -296,7 +296,7 @@ func _build_buildings() -> void:
 				push_warning("Buildings: %s (%s) ke liye jagah nahi mili -> skip"
 						% [kind, zone_name])
 				continue
-			var building := BUILDING.build(kind)
+			var building: Node3D = BUILDING.build(kind)
 			if building == null:
 				continue
 			building.position = spot["pos"]
@@ -383,8 +383,8 @@ func _footprint_hits_obstacle(x: float, z: float, fw: float, fd: float) -> bool:
 		if i < BOUNDARY_BOXES:
 			continue
 		var item: Array = _obstacles[i]
-		var opos := (item[0] as Vector3) * scale_f
-		var osize := (item[1] as Vector3) * scale_f
+		var opos: Vector3 = (item[0] as Vector3) * scale_f
+		var osize: Vector3 = (item[1] as Vector3) * scale_f
 		if absf(x - opos.x) < (fw + osize.x) * 0.5 + 0.4 \
 				and absf(z - opos.z) < (fd + osize.z) * 0.5 + 0.4:
 			return true
@@ -571,7 +571,8 @@ func _spawn_multimesh(container: Node3D, kind: String, placements: Array) -> boo
 			var item: Dictionary = items[i]
 			var s: float = float(item["scale"])
 			var basis := Basis(Vector3.UP, float(item["yaw"])).scaled(Vector3.ONE * s)
-			multimesh.set_instance_transform(i, Transform3D(basis, item["pos"]))
+			var ipos: Vector3 = item["pos"]
+			multimesh.set_instance_transform(i, Transform3D(basis, ipos))
 		var node := MultiMeshInstance3D.new()
 		node.name = "%sMultiMesh%d" % [kind.capitalize(), int(variant)]
 		node.multimesh = multimesh

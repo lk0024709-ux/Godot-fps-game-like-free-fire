@@ -193,7 +193,7 @@ func _run_phase_1_real_assets() -> void:
 		_check(vehicle_missing.is_empty(), "7 vehicles ke models mile (missing: %s)" % str(vehicle_missing))
 
 	# tree pe CapsuleShape3D collision (spec: r = 0.5)
-	var tree_prop := Assets.tree(1.0, 0)
+	var tree_prop: Node3D = Assets.tree(1.0, 0)
 	if tree_prop != null:
 		add_child(tree_prop)
 		var capsule_found := false
@@ -205,7 +205,7 @@ func _run_phase_1_real_assets() -> void:
 		_check(capsule_found, "ped pe CapsuleShape3D collision hai")
 		tree_prop.queue_free()
 
-	var vehicle := Assets.build_vehicle_model("Taxi")
+	var vehicle: StaticBody3D = Assets.build_vehicle_model("Taxi")
 	if vehicle == null:
 		vehicle = Assets.fallback_vehicle("Taxi", Color(0.9, 0.8, 0.2))
 	_check(vehicle != null, "vehicle bana (Taxi)")
@@ -215,7 +215,7 @@ func _run_phase_1_real_assets() -> void:
 
 	# ---- 5) BUILDINGS: chaaron types bante hain, light + solid walls ke saath ----
 	for kind in ["small_house", "big_house", "barn", "shop"]:
-		var building := BUILDING.build(kind)
+		var building: Node3D = BUILDING.build(kind)
 		_check(building != null, "building bana: %s" % kind)
 		if building == null:
 			continue

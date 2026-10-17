@@ -868,7 +868,7 @@ static func nature_mesh(kind: String, variant: int) -> Mesh:
 	if meshes.size() != 1:
 		inst.free()
 		return null
-	var node := meshes[0]
+	var node: MeshInstance3D = meshes[0]
 	# converter geometry ko node me hi bake karta hai; agar transform bacha hua ho to
 	# MultiMesh galat jagah lagega -> aise model ko MultiMesh me na daalo.
 	if not node.transform.is_equal_approx(Transform3D.IDENTITY):
