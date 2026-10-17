@@ -442,6 +442,65 @@ jobs:
           echo "::error::Asset selftest FAIL — upar ka output aur commit comment dekho (game phir bhi procedural pe banta rahega)"
           exit 1
 
+      # ---- 8e) Map build smoke test (buildings + nature + vehicles) ----
+      # Poora main scene headless chalta hai (180 frames) aur map ki summary lines
+      # check karta hai. Isse pata chalta hai ki buildings/nature/gaadiyaan SACH ME
+      # banti hain (sirf code parse hona kaafi nahi).
+      - name: "8e) Map build smoke test (buildings + nature + vehicles)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/map.log"
+          set +e
+          godot --headless --path . --quit-after 180 scenes/main.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          BUILDINGS=$(sed -nE 's/.*Buildings: ([0-9]+) placed.*/\1/p' "$LOG" | tail -1)
+          VEHICLES=$(sed -nE 's/.*Vehicles: ([0-9]+) placed.*/\1/p' "$LOG" | tail -1)
+          NATURE=$(sed -nE 's/.*Nature: ([0-9]+) props placed.*/\1/p' "$LOG" | tail -1)
+          BUILDINGS=${BUILDINGS:-0}
+          VEHICLES=${VEHICLES:-0}
+          NATURE=${NATURE:-0}
+
+          echo "map summary: buildings=$BUILDINGS vehicles=$VEHICLES props=$NATURE" | tee -a "$DIAG"
+          grep -E "Buildings:|Nature:|Vehicles:" "$LOG" | tail -5 | tee -a "$DIAG" || true
+          grep -E "SCRIPT ERROR|ERROR:" "$LOG" | head -15 | tee -a "$DIAG" || true
+          echo "godot exit code: $RC" | tee -a "$DIAG"
+
+          {
+            echo "## Map build smoke test"
+            echo ""
+            echo "buildings: **$BUILDINGS** | vehicles: **$VEHICLES** | nature props: **$NATURE**"
+            echo ""
+            echo '```'
+            grep -E "Buildings:|Nature:|Vehicles:|SCRIPT ERROR|ERROR:" "$LOG" | head -25 || echo "(koi line nahi)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$BUILDINGS" -ge 10 ] && [ "$VEHICLES" -ge 6 ] && [ "$NATURE" -ge 30 ]; then
+            echo "::notice::Map PASS: $BUILDINGS buildings, $VEHICLES vehicles, $NATURE nature props"
+            exit 0
+          fi
+
+          {
+            echo "## Map build FAIL (run ${GITHUB_RUN_ID})"
+            echo ""
+            echo "buildings=$BUILDINGS (>=10 chahiye), vehicles=$VEHICLES (>=6), nature=$NATURE (>=30)"
+            echo ""
+            echo '```'
+            grep -E "Buildings:|Nature:|Vehicles:|SCRIPT ERROR|ERROR:|at: " "$LOG" | head -40 || tail -40 "$LOG"
+            echo '```'
+          } > "$RUNNER_TEMP/map-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/map-report.md" || echo "comment post nahi hua"
+          echo "::error::Map build FAIL — buildings/vehicles/nature nahi bane (upar summary dekho)"
+          exit 1
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail
