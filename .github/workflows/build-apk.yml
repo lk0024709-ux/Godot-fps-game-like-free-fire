@@ -518,6 +518,68 @@ jobs:
           echo "::error::Map build FAIL — buildings/vehicles/nature nahi bane (upar summary dekho)"
           exit 1
 
+      # ---- 8f) UI flow smoke test (splash -> loading -> home -> main) ----
+      # Poora UI flow headless chalta hai. `--fixed-fps 60` isliye ki headless me
+      # frames bahut tez chalte hain, par Tween/Timer "game time" pe chalte hain —
+      # fixed fps se 1200 frames = 20 second ka game time milta hai.
+      # Har screen apna marker print karti hai; koi marker na mile to step RED.
+      - name: "8f) UI flow smoke test (splash -> loading -> home)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/ui-flow.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 1200 \
+            scenes/splash.tscn -- --ui-test > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+
+          FAIL=""
+          for MARK in "SPLASH: done -> loading" "LOADING: done -> home" "HOME: ready" \
+                      "HOME: BATTLE -> main" "Buildings:"; do
+            if grep -qF "$MARK" "$LOG"; then
+              echo "  OK   $MARK" | tee -a "$DIAG"
+            else
+              echo "  MISS $MARK" | tee -a "$DIAG"
+              FAIL="${FAIL}${MARK}; "
+            fi
+          done
+
+          {
+            echo "## UI flow smoke test"
+            echo ""
+            echo "splash -> loading -> home -> main  (godot exit code: $RC)"
+            echo ""
+            echo '```'
+            grep -E "SPLASH:|LOADING:|HOME:|Buildings:|SCRIPT ERROR" "$LOG" | head -30 || tail -30 "$LOG"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ -z "$FAIL" ]; then
+            echo "::notice::UI flow PASS: splash -> loading -> home -> main"
+            exit 0
+          fi
+
+          {
+            echo "## UI flow FAIL (run ${GITHUB_RUN_ID}, exit code ${RC})"
+            echo ""
+            echo "Missing markers: $FAIL"
+            echo ""
+            echo '```'
+            grep -E "SPLASH:|LOADING:|HOME:|SCRIPT ERROR|ERROR:|at: " "$LOG" | head -40 || tail -40 "$LOG"
+            echo '```'
+          } > "$RUNNER_TEMP/ui-flow-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/ui-flow-report.md" || echo "comment post nahi hua"
+          echo "::error::UI flow FAIL — splash/loading/home/main me se koi step nahi chala"
+          exit 1
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail

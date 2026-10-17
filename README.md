@@ -1,4 +1,4 @@
-# Free Fire Style FPS — Godot 4.2 (PC + Android)
+# Indus : Battle Royale — Godot 4.2 (PC + Android)
 
 Ek chhota par **pura 3D First-Person Shooter**, jo PC (WASD + mouse) aur Android
 (touch joystick + swipe) dono pe chalta hai.
@@ -10,6 +10,28 @@ unhe `.glb` me badalta hai. Koi model na mile (ya folder hi na ho) to game
 build ya game kabhi is wajah se nahi rukta.
 
 APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki zaroorat nahi.
+
+## Game launch flow (UI)
+
+```
+splash.tscn  ->  loading.tscn  ->  home.tscn  ->  main.tscn
+(logo+PRESENTS)  (progress bar)   (BATTLE)      (asli game)
+```
+
+| Screen | File | Kya hota hai |
+|---|---|---|
+| **Splash** | `scenes/splash.tscn` + `scripts/splash.gd` | Kaala background, logo (`res://icon.svg`, 300x300) + "PRESENTS". 1s fade-in -> 1.5s hold -> 1s fade-out. Tap/key se skip. |
+| **Loading** | `scenes/loading.tscn` + `scripts/loading.gd` | Dark grey background, "LOADING..." + green progress bar (screen ki 60% width). `main.tscn` background thread me load hota hai. 100% pe 0.5s ruk kar home. |
+| **Home** | `scenes/home.tscn` + `scripts/home.gd` | Gradient background, logo 150x150, gold title, bada **BATTLE** button (green) -> game, **GUNS**/**SETTINGS** (grey) -> "Coming Soon", top-right me coins/gems. |
+| **Game** | `scenes/main.tscn` | Pehle jaisa hi — arena, weapons, HUD, enemies. |
+
+Sab UI **code se** bana hai (Control/ColorRect/TextureRect/Label/Button/ProgressBar +
+containers). Koi external font/theme/image nahi — sirf `icon.svg` load hota hai, aur wo
+na mile to ek procedural emblem dikh jata hai (fail-soft).
+
+> `res://icon.svg` hi launcher icon bhi hai (`export_presets.cfg` ->
+> `launcher_icons/main_192x192`). Naya logo chahiye? Bas wahi file replace kar do —
+> splash, home aur APK icon teeno apne aap badal jayenge.
 
 ---
 
@@ -124,12 +146,18 @@ project.godot                  # Project settings: naam, 1280x720, mobile render
 export_presets.cfg             # Android export preset (naam "Android", arm64-v8a, APK, signed) — isi ko Actions use karta hai
 icon.svg                       # Launcher icon (hand-made SVG, koi download nahi)
 
-scenes/main.tscn               # Main scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
+scenes/splash.tscn             # Launch scene #1: logo + PRESENTS (1s in / 1.5s hold / 1s out)
+scenes/loading.tscn            # Launch scene #2: progress bar + threaded main.tscn load
+scenes/home.tscn               # Launch scene #3: home menu (BATTLE / GUNS / SETTINGS / coins)
+scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
 scenes/player.tscn             # Player body + head + camera (FOV 75) + gun model
 scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
+scripts/splash.gd              # Splash ka UI + fade tween + loading.tscn pe transition
+scripts/loading.gd             # Threaded load (load_threaded_request/status) + progress bar + home.tscn
+scripts/home.gd                # Home menu UI (anchors/containers), BATTLE -> main.tscn, Coming Soon dialogs
 scripts/main.gd                # Game manager: arena + buildings + nature + gaadiyaan banata hai, enemies/score/game over
 scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0 model (sirf data — yahan numbers badlo)
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
@@ -167,6 +195,10 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 
 | Kya chahiye | Kahan badlo |
 |---|---|
+| Game ka naam / icon / launch scene | `project.godot` → `application/config/name`, `config/icon`, `run/main_scene` |
+| Splash ki speed | `scripts/splash.gd` → `FADE_IN`, `HOLD`, `FADE_OUT` |
+| Loading screen kitni der | `scripts/loading.gd` → `MIN_SHOW`, `DONE_DELAY` |
+| Home ke buttons / rang | `scripts/home.gd` → `GOLD`, `GREEN`, `GREY`, `_make_button()` |
 | Player speed / jump | `scripts/player.gd` → `move_speed`, `jump_velocity` |
 | Firing speed / damage | `scripts/player.gd` → `fire_cooldown`, `bullet_damage` |
 | Mouse / touch sensitivity | `scripts/player.gd` → `mouse_sensitivity`, `touch_sensitivity` |
