@@ -542,6 +542,7 @@ jobs:
 
           FAIL=""
           for MARK in "SPLASH: done -> loading" "LOADING: done -> home" "HOME: ready" \
+                      "HOME: bg loaded -> res://assets/ui/home_bg.png" \
                       "HOME: BATTLE -> main" "Buildings:"; do
             if grep -qF "$MARK" "$LOG"; then
               echo "  OK   $MARK" | tee -a "$DIAG"

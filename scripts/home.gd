@@ -78,6 +78,10 @@ func _build_ui() -> void:
 func _make_background() -> Control:
 	var tex := _load_texture(BG_PATH)
 	_bg_ok = tex != null
+	if _bg_ok:
+		print("HOME: bg loaded -> %s" % BG_PATH)
+	else:
+		print("HOME: bg MISSING -> %s" % BG_PATH)
 
 	if tex != null:
 		var rect := TextureRect.new()
