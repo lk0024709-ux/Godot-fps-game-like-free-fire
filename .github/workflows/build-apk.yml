@@ -482,6 +482,23 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
 
+          # script errors alag se report karo — build green ho par log me error ho to
+          # commit comment pe dikh jaye (chhup ke na reh jaye)
+          ERROR_COUNT=$(grep -c "SCRIPT ERROR" "$LOG" 2>/dev/null || true)
+          ERROR_COUNT=${ERROR_COUNT:-0}
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            {
+              echo "## Map build: $ERROR_COUNT script error(s) (build phir bhi pass)"
+              echo ""
+              echo '```'
+              grep -E "SCRIPT ERROR|at: " "$LOG" | head -30
+              echo '```'
+            } > "$RUNNER_TEMP/map-errors.md"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F body=@"$RUNNER_TEMP/map-errors.md" || echo "comment post nahi hua"
+            echo "::warning::Map me $ERROR_COUNT script errors hain (details commit comment me)"
+          fi
+
           if [ "$BUILDINGS" -ge 10 ] && [ "$VEHICLES" -ge 6 ] && [ "$NATURE" -ge 30 ]; then
             echo "::notice::Map PASS: $BUILDINGS buildings, $VEHICLES vehicles, $NATURE nature props"
             exit 0

@@ -354,11 +354,23 @@ static func _mat(color: Color, metallic: float = 0.0, roughness: float = 0.9) ->
 5. **FPS > 30** — 129 models ke GLB sirf 11.6 MB / 292k tris, map pe ek waqt me ~14 buildings + ~45 ped + ~30 patthar + 1 MultiMesh (ghaas) + 1 MultiMesh (plant). Agar FPS girta hai: `max_trees`/`max_rocks` ghatao ya `grass_count`/`plant_count` kam karo (MultiMesh already 1 draw call per variant).
 6. **Fail-soft** — `assets/models/` khali kar do to bhi game chalta hai (procedural ped/ghar/gaadi), crash nahi.
 
-### CI evidence
+### CI evidence (final)
 
-* Run **#55** (`39010373293`, commit `3eeb92e`) — **Success**, 1 m 9 s. Steps 7d OBJ (129 models), 7e GLB check, 8b parse gate, 8d selftest, 9 APK export — sab green. Annotation: *"Asset selftest PASS"*.
-* Artifact `FreeFireFPS-apk` **27.2 MB** (`sha256:dbae70bd…39bcc`), release `latest-apk` me `FreeFireFPS.apk`.
-* Local: 129/129 GLB valid, 0 errors; characters/vehicles ka muh −Z verify; 14/14 buildings ki placement algorithm ko Python replica se verify kiya (same grid/limits ke saath).
+* Run **#58** (`39010767807`, commit `09fcff6`) — **Success**, 1 m 8 s.
+  Annotation: *"Map PASS: **14 buildings, 7 vehicles, 151 nature props**"* + *"Asset selftest PASS"*.
+* Steps: **7d** OBJ→GLB (129 models), **7e** GLB check, **8b** parse gate, **8d** asset selftest,
+  **8e** map smoke test (main scene 180 frames headless: 14/7/151), **9** APK export — sab green.
+* Artifact `FreeFireFPS-apk` **27.2 MB** (`sha256:ced133b0…3eabe`); release `latest-apk` me naya `FreeFireFPS.apk`.
+* Local: 129/129 GLB valid, 0 errors, 292,428 tris; characters/vehicles ka muh −Z GLB accessors se verify;
+  building placement ka Python replica 14/14.
+
+### Smoke test ne ek asli bug pakda
+
+Pehle run me **`Vehicles: 0 placed`** aur `SCRIPT ERROR ... get_name ... Expected 0 arguments` aaya:
+`character_data.gd` ka `get_name(index)` GDScript (Script resource) ke apne `get_name()` se takra raha tha.
+Rename kiya → **`display_name(index)`** (player.gd + selftest.gd bhi update). Usi run me nature sirf 30 props thi
+(buildings ring kha rahi thi) — ab **20 retry + building clearance + chhota clear-center radius** se **151 props**.
+Yahi 8e step aage bhi aise bugs pakdega (green build = map sach me banta hai).
 
 ## 5) IF IT FAILS — 3 sabse zyada mumkin errors + fix
 
