@@ -62,6 +62,22 @@ func _run_phase_1_real_assets() -> void:
 	var any_downloaded := Loader.has_any_models()
 	_notes.append("koi downloaded model mila: %s" % any_downloaded)
 
+	# ---- ye counts CI me PAKKE hone chahiye (spec) ----
+	# Source folder repo me hai (CI source tree) to .glb bhi bane hone chahiye.
+	# Agar OBJ/FBX conversion fail hui to yahin RED ho jayega (chhup ke nahi jayega).
+	var sources := {
+		"weapons": "res://assets/downloaded_obj/Weapons",
+		"nature": "res://assets/downloaded_obj/Nature",
+		"characters": "res://assets/downloaded_obj/Characters",
+		"vehicles": "res://assets/downloaded_obj/Vehicles",
+	}
+	var expected := {"weapons": 40, "nature": 60, "characters": 16, "vehicles": 7}
+	for category in expected:
+		if DirAccess.dir_exists_absolute(String(sources[category])):
+			var got := int(stats.get(category, 0))
+			_check(got >= int(expected[category]),
+					"%s ke models %d+ chahiye, mile %d" % [category, int(expected[category]), got])
+
 	# ---------- 2) weapon models ----------
 	var missing_models: Array[String] = []
 	var weapons: Array[Dictionary] = DATA.get_weapons()

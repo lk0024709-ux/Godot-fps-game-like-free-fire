@@ -77,3 +77,43 @@ deti hai, khud se 180° nahi ghumati (`assets.gd` → `_normalize_orientation()`
 milata hai. Agar 60% se zyada faces ulte nikle to winding flip kar deta hai (Godot back-face
 cull karta hai, warna gun andar se dikhta). Run 40/40 models ka result: **sab theek**
 (flip ki zaroorat kisi me nahi padi).
+
+---
+
+# Nature / Characters / Vehicles (OBJ pack) — modes aur rules
+
+`tools/obj2glb.py` **folder ke naam se mode chunta hai** (`--mode auto`):
+
+| Folder | Mode | Rotation | Size | Kyun |
+|---|---|---|---|---|
+| `Weapons/` | `weapon` | +X → −Z (rotY 90) | longest = 1.0 m | barrel −Z chahiye |
+| `Nature/` | `prop` | koi nahi (Y-up) | **asli metres** | ped khade rehne chahiye; "longest → Z" rule unhe lita deta |
+| `Characters/` | `character` | rotY 180 | asli metres | muh +Z pe hai (Eyes material se naapa) → −Z |
+| `Vehicles/` | `vehicle` | rotY 180 | asli metres | headlights +Z pe hain → −Z |
+
+**Base hamesha y = 0** (nature/characters/vehicles me) aur X/Z centre — isliye
+`assets.gd` ka koi bhi builder model ko seedha zameen pe rakh sakta hai.
+
+## Runtime scaling
+
+| Cheez | Kaun scale karta hai | Kitna |
+|---|---|---|
+| Pine tree | `main.gd` `_scatter_nature()` | 0.9–1.4 × (model 2.3–6.9 m) |
+| Rock | wahi | 0.7–1.4 × (model 0.7–2.2 m) |
+| Grass / plant | wahi | 0.85–1.55 × (model 0.3–1.5 m) |
+| Character | `assets.gd` `fit_to_height()` | hamesha 1.8 m |
+| Vehicle | `assets.gd` `build_vehicle_model()` | hamesha 4.4 m lambai |
+
+## Collision
+
+* **Pine** → `CapsuleShape3D` radius **0.5 m** (spec), height = model ki height.
+* **Rock** → `BoxShape3D` (AABB se, 0.85×).
+* **Grass / plant** → **koi collision nahi** (decor).
+* **Vehicle** → `BoxShape3D` (AABB ka 90–96%).
+
+## MultiMesh (ghaas/plant)
+
+`main.gd` me agar kisi kind ke **40 se zyada** instances hain (`multimesh_threshold`),
+to har model-variant ka ek `MultiMeshInstance3D` ban jata hai (1 draw call per variant).
+Condition: model me **ek hi mesh node** ho (hamara OBJ→GLB aisa hi hai). Warna
+individual nodes lag jate hain — fail-soft.
