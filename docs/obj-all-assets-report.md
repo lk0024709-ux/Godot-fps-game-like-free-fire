@@ -356,11 +356,12 @@ static func _mat(color: Color, metallic: float = 0.0, roughness: float = 0.9) ->
 
 ### CI evidence (final)
 
-* Run **#58** (`39010767807`, commit `09fcff6`) — **Success**, 1 m 8 s.
+* Run **#59** (`39010875937`, commit `a91b345`) — **Success**, 1 m 14 s.
   Annotation: *"Map PASS: **14 buildings, 7 vehicles, 151 nature props**"* + *"Asset selftest PASS"*.
 * Steps: **7d** OBJ→GLB (129 models), **7e** GLB check, **8b** parse gate, **8d** asset selftest,
   **8e** map smoke test (main scene 180 frames headless: 14/7/151), **9** APK export — sab green.
-* Artifact `FreeFireFPS-apk` **27.2 MB** (`sha256:ced133b0…3eabe`); release `latest-apk` me naya `FreeFireFPS.apk`.
+* Artifact `FreeFireFPS-apk` **27.2 MB** (`sha256:8f77b309…6def`); release `latest-apk` me naya `FreeFireFPS.apk` (**29,082,462 bytes**, 2026-10-17 06:43 UTC).
+* Us run me koi `SCRIPT ERROR` nahi tha (smoke test error hote hi commit comment daalta hai — koi comment nahi aaya).
 * Local: 129/129 GLB valid, 0 errors, 292,428 tris; characters/vehicles ka muh −Z GLB accessors se verify;
   building placement ka Python replica 14/14.
 
