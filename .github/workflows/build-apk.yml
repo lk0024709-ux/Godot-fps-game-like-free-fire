@@ -150,17 +150,27 @@ jobs:
           godot --version 2>&1 | tee -a "$DIAG"
 
       # -------------------------------------------------------------- assets --
-      # CC0 nature models (Kenney Nature Kit 2.1) — build ke waqt download hote hain,
-      # isliye repo me koi binary file (.glb) commit nahi karni padti.
-      # Download fail ho gaya to koi baat nahi: scripts/assets.gd ka procedural
-      # fallback use hota hai aur game PHIR BHI banta hai (fail-soft).
-      # NOTE: ye step "Project import" se PEHLE hona zaroori hai — import ke waqt hi
+      # Asset pipeline (chaar hisse, chaaron fail-soft):
+      #   7c) purane Kenney nature models (optional extra — net na ho to skip; Quaternius
+      #       models already repo me hain, ye sirf backup variety ke liye hain)
+      #   7d) WEAPONS: assets/downloaded_obj/Weapons ke OBJ+MTL -> GLB
+      #       (tools/obj2glb.py, pure python). Ye weapons ka asli source hai.
+      #   7d-b) BAaki sab: assets/downloaded ke FBX -> GLB (tools/fbx2glb.py).
+      #       Godot 4 na .fbx na .obj import kar sakta, isliye conversion build ke waqt hoti hai.
+      #       FBX step `--skip-existing` se chalta hai, isliye weapons ke GLB OBJ se hi bante hain.
+      #   7e) bane hue .glb ko check karo (tools/glbcheck.py)
+      # Kuch bhi fail ho to koi baat nahi: scripts/assets.gd ka procedural fallback
+      # chalta hai aur game PHIR BHI banta hai.
+      # NOTE: ye steps "Project import" se PEHLE hone zaroori hain — import ke waqt hi
       # Godot in .glb files ko padhta hai.
-      - name: "7b) Cache: downloaded CC0 assets"
+      # NOTE: converted .glb ko cache karte hain (FBX source ab repo me hi hai).
+      # Cache miss ho to conversion chal jata hai — koi problem nahi, bas 3-4 second zyada.
+      - name: "7b) Cache: converted models"
         uses: actions/cache@v4
         with:
-          path: assets/downloaded
-          key: cc0-assets-${{ env.NATURE_ASSET_VERSION }}-${{ env.NATURE_ASSET_SHA }}
+          path: assets/models
+          # Key me dono source folders ka hash hai -> naya model aane pe naya cache
+          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx') }}-${{ hashFiles('assets/downloaded_obj/**/*.obj') }}
 
       - name: "7c) Download CC0 nature assets (fail-soft)"
         continue-on-error: true
@@ -169,7 +179,9 @@ jobs:
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
 
-          DEST="assets/downloaded/nature"
+          # NOTE: assets/downloaded/ me .gdignore hai, isliye download seedha
+          # assets/models/nature me jata hai (wahi folder Godot import karta hai)
+          DEST="assets/models/nature"
           mkdir -p "$DEST"
           # "GLTF format" me space hai -> %20
           BASE="https://raw.githubusercontent.com/ETdoFresh/kenney.nl/${NATURE_ASSET_SHA}/kenney_natureKit_2.1/Models/GLTF%20format"
@@ -183,7 +195,7 @@ jobs:
           )
 
           # Poora download 150 second me nipat jaye (workflow ka 10 min budget bachane ke liye)
-          DEADLINE=$(( $(date +%s) + 150 ))
+          DEADLINE=$(( $(date +%s) + 45 ))
           for f in "${FILES[@]}"; do
             if [ -s "$DEST/$f" ]; then
               continue                                  # cache se mil gaya
@@ -217,6 +229,109 @@ jobs:
             echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
           fi
 
+      # ---- 7d) OBJ -> GLB conversion (saare OBJ packs ka asli source) ----
+      # assets/downloaded_obj/{Weapons,Nature,Characters,Vehicles}/*.obj + *.mtl
+      #   -> assets/models/{weapons,nature,characters,vehicles}/*.glb
+      # (Godot 4 .obj import nahi karta, isliye build ke waqt convert hota hai.
+      #  Har folder ka mode alag hai: weapons ka barrel -Z, baaki Y-up — dekho tools/obj2glb.py)
+      - name: "7d) OBJ -> GLB conversion (weapons + nature + characters + vehicles)"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          mkdir -p build
+          OUT="assets/models"
+          OBJ_COUNT=$(find assets/downloaded_obj -name '*.obj' 2>/dev/null | wc -l)
+          echo "repo me OBJ weapons: $OBJ_COUNT" | tee -a "$DIAG"
+          if [ "$OBJ_COUNT" -eq 0 ]; then
+            echo "::warning::koi .obj nahi mila -> weapons FBX pack se ya procedural banenge" | tee -a "$DIAG"
+            exit 0
+          fi
+
+          # .mtl (material/colour) saath hona chahiye — dono check karte hain
+          MTL_COUNT=$(find assets/downloaded_obj -name '*.mtl' 2>/dev/null | wc -l)
+          echo ".mtl files: $MTL_COUNT" | tee -a "$DIAG"
+          if [ "$MTL_COUNT" -lt "$OBJ_COUNT" ]; then
+            echo "::warning::kuch .obj ke paas .mtl nahi hai -> unka rang default (grey) rahega" | tee -a "$DIAG"
+          fi
+
+          python3 tools/obj2glb.py assets/downloaded_obj --out-root "$OUT" \
+            --report build/obj-report.json 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::OBJ conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
+
+          for CAT in weapons nature characters vehicles; do
+            CAT_COUNT=$(find "$OUT/$CAT" -name '*.glb' 2>/dev/null | wc -l)
+            echo "  $CAT: $CAT_COUNT glb" | tee -a "$DIAG"
+          done
+          GLB_COUNT=$(find "$OUT/weapons" -name '*.glb' 2>/dev/null | wc -l)
+          if [ "$GLB_COUNT" -eq 0 ]; then
+            echo "::warning::ek bhi weapon glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
+          fi
+          NATURE_GLB=$(find "$OUT/nature" -name '*.glb' 2>/dev/null | wc -l)
+          if [ "$NATURE_GLB" -eq 0 ]; then
+            echo "::warning::koi nature glb nahi bana -> procedural ped/patthar chalenge" | tee -a "$DIAG"
+          fi
+
+          # Raw OBJ/MTL build workspace se hata do (repo me safe hain):
+          # Godot ko sirf .glb chahiye, aur assets/downloaded_obj/ me .gdignore hai
+          # (isliye Godot us folder ko scan bhi nahi karta).
+          find assets/downloaded_obj -name '*.obj' -delete
+          find assets/downloaded_obj -name '*.mtl' -delete
+          echo "OBJ/MTL build workspace se hata diye (repo me safe hain)" | tee -a "$DIAG"
+
+      # ---- 7d) FBX -> GLB conversion (repo me pade CC0 models) ----
+      # Godot 4 me FBX importer nahi hai — isliye pehle python se convert karte hain.
+      # tools/fbx2glb.py pure stdlib hai (koi pip install nahi, koi binary download nahi).
+      - name: "7d) FBX -> GLB conversion (Quaternius CC0 models)"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          mkdir -p build
+          OUT="assets/models"
+          FBX_COUNT=$(find assets/downloaded -name '*.fbx' 2>/dev/null | wc -l)
+          echo "repo me FBX files: $FBX_COUNT" | tee -a "$DIAG"
+          if [ "$FBX_COUNT" -eq 0 ]; then
+            echo "::warning::koi .fbx nahi mila -> poora game procedural models pe chalega" | tee -a "$DIAG"
+            exit 0
+          fi
+
+          # .glb SIRF assets/models/ me jate hain (assets/downloaded/ me .gdignore hai,
+          # isliye Godot wahan ka kuch bhi import nahi karta)
+          # --skip-existing: jo .glb OBJ step (7d) ne bana diya hai use chhedo mat
+          python3 tools/fbx2glb.py assets/downloaded --out-root "$OUT" --skip-existing \
+            --report build/glb-report.json 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
+
+          GLB_COUNT=$(find "$OUT" -name '*.glb' 2>/dev/null | wc -l)
+          echo "convert ho gaye: $GLB_COUNT glb -> $OUT" | tee -a "$DIAG"
+          du -sh "$OUT"/* 2>/dev/null | tee -a "$DIAG" || true
+          if [ "$GLB_COUNT" -eq 0 ]; then
+            echo "::warning::ek bhi glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
+          fi
+
+          # FBX ko build workspace se hata do:
+          # Godot 4 na FBX import kar sakta hai na samajh sakta hai, aur bade packs pe
+          # uska import scan ghanton atak jata hai (yahi is repo ka CI hang ho raha tha).
+          # Source repo me pade rehte hain — yahan sirf build ke liye hata rahe hain.
+          find assets/downloaded -name '*.fbx' -delete
+          find assets/downloaded -name '*.fbx.import' -delete
+          echo "FBX build workspace se hata diye (repo me safe hain)" | tee -a "$DIAG"
+
+      # ---- 7e) .glb sanity check (header/accessors/index range) ----
+      - name: "7e) GLB sanity check"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          python3 tools/glbcheck.py assets/models 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::kuch glb theek nahi hai (convert dobara chalega agli baar)" | tee -a "$DIAG"
+
       - name: "8) Project import (headless)"
         run: |
           set -euo pipefail
@@ -229,10 +344,21 @@ jobs:
           set -uo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
+
+          # pehle cross-file reference check (gdlint isko nahi pakadta, Godot pakadta hai)
+          python3 tools/gdcheckrefs.py --params 2>&1 | tee -a "$DIAG" || \
+            echo "::warning::gdcheckrefs ne kuch shak wali cheez batayi (neeche Godot ka parse gate decide karega)"
+
           bad=0
           for f in scripts/*.gd; do
-            out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1)
-            code=$?
+            # `if ... then ... else` pattern zaroori hai: GitHub ke run: steps me
+            # bash -e chalta hai, aur check fail hone pe (non-zero) script wahin
+            # ruk jata — output dikhta hi nahi tha.
+            if out=$(godot --headless --path . --check-only --script "res://${f}" 2>&1); then
+              code=0
+            else
+              code=$?
+            fi
             if [ $code -ne 0 ] || echo "$out" | grep -qiE "parse error|script error|failed to load"; then
               bad=$((bad + 1))
               echo "--- $f ---" | tee -a "$DIAG"
@@ -259,6 +385,139 @@ jobs:
           fi
           echo "Import log saaf hai ✔ (koi parse/load error nahi)"
 
+      # ---- 8d) Game ka asset selftest (headless, 5-10 second) ----
+      # scripts/selftest.gd: loader + 28 weapons + character + nature + vehicle + fail-soft.
+      # Kuch bhi galat ho to ye step RED ho jata hai — silent kharab APK nahi banega.
+      - name: "8d) Asset selftest (downloaded models + procedural fallback)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/selftest.log"
+          echo "godot: $(command -v godot || echo nahi-mila) | scene: $([ -f scenes/selftest.tscn ] && echo mila || echo GAYAB)"
+
+          # ---------------------------------------------------------------
+          # DHYAAN: GitHub ke "run:" steps me bash -e chalta hai. Selftest fail
+          # hone pe godot exit code 1 deta hai — pehle usi wajah se ye step
+          # 0 second me chup-chaap fail ho jata tha aur output kahin nahi dikhta
+          # (na log me, na commit comment me). Isliye yahan `set +e` hai.
+          # ---------------------------------------------------------------
+          set +e
+          godot --headless --path . --quit-after 600 scenes/selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+          echo "godot exit code: $RC" | tee -a "$DIAG"
+
+          # run page pe summary (phone se padhna aasan)
+          {
+            echo "## Asset selftest"
+            echo ""
+            echo '```'
+            grep -E "note:|SELFTEST|FAIL:" "$LOG" | tail -n 40 || tail -n 40 "$LOG"
+            echo '```'
+            echo "exit code: $RC"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$RC" -eq 0 ] && grep -q "SELFTEST_EXIT_OK" "$LOG"; then
+            echo "::notice::Asset selftest PASS (downloaded + procedural dono chal rahe hain)"
+            exit 0
+          fi
+
+          # FAIL: poora output commit comment me daal do (run page ke alawa
+          # yahin se bhi padha ja sake — aur CI ke bahar se bhi).
+          {
+            echo "## Asset selftest FAIL (run ${GITHUB_RUN_ID}, exit code ${RC})"
+            echo ""
+            echo '```'
+            tail -c 9000 "$LOG" 2>/dev/null || echo "(selftest log khali hai)"
+            echo '```'
+          } > "$RUNNER_TEMP/selftest-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/selftest-report.md" || echo "comment post nahi hua"
+          echo "::error::Asset selftest FAIL — upar ka output aur commit comment dekho (game phir bhi procedural pe banta rahega)"
+          exit 1
+
+      # ---- 8e) Map build smoke test (buildings + nature + vehicles) ----
+      # Poora main scene headless chalta hai (180 frames) aur map ki summary lines
+      # check karta hai. Isse pata chalta hai ki buildings/nature/gaadiyaan SACH ME
+      # banti hain (sirf code parse hona kaafi nahi).
+      - name: "8e) Map build smoke test (buildings + nature + vehicles)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/map.log"
+          set +e
+          godot --headless --path . --quit-after 180 scenes/main.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          BUILDINGS=$(sed -nE 's/.*Buildings: ([0-9]+) placed.*/\1/p' "$LOG" | tail -1)
+          VEHICLES=$(sed -nE 's/.*Vehicles: ([0-9]+) placed.*/\1/p' "$LOG" | tail -1)
+          NATURE=$(sed -nE 's/.*Nature: ([0-9]+) props placed.*/\1/p' "$LOG" | tail -1)
+          BUILDINGS=${BUILDINGS:-0}
+          VEHICLES=${VEHICLES:-0}
+          NATURE=${NATURE:-0}
+
+          echo "map summary: buildings=$BUILDINGS vehicles=$VEHICLES props=$NATURE" | tee -a "$DIAG"
+          grep -E "Buildings:|Nature:|Vehicles:" "$LOG" | tail -5 | tee -a "$DIAG" || true
+          grep -E "SCRIPT ERROR|ERROR:" "$LOG" | head -15 | tee -a "$DIAG" || true
+          echo "godot exit code: $RC" | tee -a "$DIAG"
+
+          {
+            echo "## Map build smoke test"
+            echo ""
+            echo "buildings: **$BUILDINGS** | vehicles: **$VEHICLES** | nature props: **$NATURE**"
+            echo ""
+            echo '```'
+            grep -E "Buildings:|Nature:|Vehicles:|SCRIPT ERROR|ERROR:" "$LOG" | head -25 || echo "(koi line nahi)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          # script errors alag se report karo — build green ho par log me error ho to
+          # commit comment pe dikh jaye (chhup ke na reh jaye)
+          ERROR_COUNT=$(grep -c "SCRIPT ERROR" "$LOG" 2>/dev/null || true)
+          ERROR_COUNT=${ERROR_COUNT:-0}
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            {
+              echo "## Map build: $ERROR_COUNT script error(s) (build phir bhi pass)"
+              echo ""
+              echo '```'
+              grep -E "SCRIPT ERROR|at: " "$LOG" | head -30
+              echo '```'
+            } > "$RUNNER_TEMP/map-errors.md"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F body=@"$RUNNER_TEMP/map-errors.md" || echo "comment post nahi hua"
+            echo "::warning::Map me $ERROR_COUNT script errors hain (details commit comment me)"
+          fi
+
+          if [ "$BUILDINGS" -ge 10 ] && [ "$VEHICLES" -ge 6 ] && [ "$NATURE" -ge 30 ]; then
+            echo "::notice::Map PASS: $BUILDINGS buildings, $VEHICLES vehicles, $NATURE nature props"
+            exit 0
+          fi
+
+          {
+            echo "## Map build FAIL (run ${GITHUB_RUN_ID})"
+            echo ""
+            echo "buildings=$BUILDINGS (>=10 chahiye), vehicles=$VEHICLES (>=6), nature=$NATURE (>=30)"
+            echo ""
+            echo '```'
+            grep -E "Buildings:|Nature:|Vehicles:|SCRIPT ERROR|ERROR:|at: " "$LOG" | head -40 || tail -40 "$LOG"
+            echo '```'
+          } > "$RUNNER_TEMP/map-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/map-report.md" || echo "comment post nahi hua"
+          echo "::error::Map build FAIL — buildings/vehicles/nature nahi bane (upar summary dekho)"
+          exit 1
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail
@@ -267,6 +526,24 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release Android 2>&1 | tee -a "$DIAG"
           ls -lh build/ | tee -a "$DIAG" || true
+
+      # GitHub ke run page pe asset summary (phone se dekhne me aasan)
+      - name: "9b) Asset summary (run page pe)"
+        if: always()
+        run: |
+          {
+            echo "## Asset summary"
+            echo ""
+            echo '| folder | files | size |'
+            echo '|---|---|---|'
+            for d in weapons nature characters vehicles; do
+              f=$(find "assets/models/$d" -name '*.glb' 2>/dev/null | wc -l)
+              s=$(du -sh "assets/models/$d" 2>/dev/null | cut -f1)
+              echo "| $d | $f glb | ${s:-0} |"
+            done
+            echo ""
+            echo "FBX -> GLB converter: tools/fbx2glb.py | checker: tools/glbcheck.py"
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: "10) APK ka naam pakka karo"
         run: |

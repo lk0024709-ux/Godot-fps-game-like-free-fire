@@ -21,7 +21,7 @@ const DATA := preload("res://scripts/weapon_data.gd")
 
 @export var start_index: int = 0        ## shuru me kaunsa weapon (0 = Desert Eagle)
 @export var reload_time: float = 1.2    ## spec: 1.2 second
-@export var model_scale: float = 0.7    ## view-model ka size
+@export var model_scale: float = 0.7    ## view-model ka size (downloaded + procedural dono)
 
 var weapons: Array[Dictionary] = []     ## saare 28 weapons (weapon_data.gd se)
 var current_index: int = 0
@@ -154,7 +154,8 @@ func set_holder(new_holder: Node3D) -> void:
 	build_model()
 
 
-## Current weapon ka model banata hai (shape + skin colours assets.gd se)
+## Current weapon ka model banata hai (downloaded model + skin colours assets.gd se).
+## Yahi ek jagah hai jo model badalti hai — HUD / firing / reload isse nahi badalte.
 func build_model() -> void:
 	if holder == null or not is_instance_valid(holder):
 		return
@@ -168,10 +169,13 @@ func build_model() -> void:
 	if weapon.is_empty():
 		return
 
+	# Downloaded CC0 model (weapon_data.gd ka "model" + "scale") -> warna procedural shape
 	_model = ASSETS.build_weapon_model(
 			String(weapon.get("shape", "rifle")),
 			weapon.get("body", Color.WHITE),
-			weapon.get("accent", Color.BLACK))
+			weapon.get("accent", Color.BLACK),
+			String(weapon.get("model", "")),
+			float(weapon.get("scale", 1.0)))
 	if _model == null:
 		return
 

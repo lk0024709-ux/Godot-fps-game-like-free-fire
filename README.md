@@ -2,7 +2,13 @@
 
 Ek chhota par **pura 3D First-Person Shooter**, jo PC (WASD + mouse) aur Android
 (touch joystick + swipe) dono pe chalta hai.
-Sab kuch **procedural** hai — koi image, sound ya external asset download nahi karna padta.
+
+Guns, characters, ped-patthar aur gaadiyan ab **asli 3D models** (CC0 / public domain)
+se aate hain — wo bhi bina kuch manually convert kiye: GitHub Actions build ke waqt
+unhe `.glb` me badalta hai. Koi model na mile (ya folder hi na ho) to game
+**procedural fallback** (code se bane box/cone shapes) pe chalta rehta hai —
+build ya game kabhi is wajah se nahi rukta.
+
 APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki zaroorat nahi.
 
 ---
@@ -15,7 +21,8 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
    Manually chalane ke liye: **Actions → Build Android APK → Run workflow**.
    Workflow sab kuch khud karta hai — Godot 4.2.2 download, export templates install,
    keystore, APK export, upload. Kisi third-party action pe depend nahi karta.
-4. ~2-4 minute wait. Green tick aa gaya to APK ready hai.
+4. ~2-4 minute wait (pehli baar thoda zyada, cache lagne ke baad ~1.5 minute).
+   Green tick aa gaya to APK ready hai.
 5. APK lene ke 2 tarike:
    - **Releases page** (sabse aasan, phone ke browser me bhi khulta hai):
      `Releases → Latest APK → FreeFireFPS.apk` — seedha download.
@@ -76,9 +83,12 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
 
 - Har gun ka apna **damage / fire rate / magazine / spread / recoil / bullet speed** hai
   (sab `scripts/weapon_data.gd` me ek-ek line me likha hai — wahi tumhara tuning table hai).
-- **Skin colours**: sirf 5 base models bante hain (pistol / smg / rifle / sniper / shotgun),
-  aur colour badalne se 28 different guns ban jate hain. Koi texture nahi — sirf
-  `StandardMaterial3D` ka `albedo_color`.
+- **Gun ka 3D model**: 25 guns ka apna asli (CC0) model hai — `scripts/weapon_data.gd` ki
+  har line me `"model"` field hai (jaise `"model": "ar_5"` = `AssaultRifle_5.glb`), aur usi ke
+  saath `"body"`/`"accent"` colour lagta hai. 3 pistols ke models pack me nahi the, isliye wo
+  code se bante hain (procedural). Model kisi wajah se na mile to automatic procedural shape
+  use hota hai — gun kabhi ghayab nahi hoti.
+- Koi texture nahi — sirf `StandardMaterial3D` ka `albedo_color` (body = surface 0, baaki = accent).
 - Reload **1.2 s**, magazine khali hone pe **khud** reload hota hai.
 - `GUNS` button (ya PC pe `G`) se poori list khulti hai — har button pe us gun ka skin
   colour dikhta hai, tap karo aur gun equip.
@@ -120,18 +130,35 @@ scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
-scripts/main.gd                # Game manager: arena banata hai, enemies spawn karta hai, score + game over
-scripts/weapon_data.gd         # 28 weapons ke stats + skin colours (sirf data — yahan numbers badlo)
+scripts/main.gd                # Game manager: arena + buildings + nature + gaadiyaan banata hai, enemies/score/game over
+scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0 model (sirf data — yahan numbers badlo)
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
-scripts/assets.gd              # 5 weapon models — sab box/cylinder/cone/sphere se, koi texture nahi
-scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage
-scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death
-scripts/asset_loader.gd        # Downloaded CC0 models load karta hai (fail-safe: na mile to null)
+scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
+scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
+scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage, body model
+scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death, humanoid model
+scripts/asset_loader.gd        # Downloaded models load karta hai, char/vehicle/nature aliases ke saath (fail-safe: na mile to null -> procedural)
+scripts/building_builder.gd    # Enterable buildings (ghar/barn/dukaan): deewar ke tukde + darwaza + light + furniture
+scripts/selftest.gd            # Automatic asset test (CI step 8d): loader/muzzle/height/buildings/fail-soft
 scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
+scenes/selftest.tscn           # Selftest scene (assets check karta hai, phone pe bhi chala sakte ho)
 
-.github/workflows/build-apk.yml # GitHub Actions: Godot 4.2.2 download + keystore + APK export + upload
+assets/downloaded/             # FBX source (nature/characters/vehicles) — .gdignore pada hai, Godot inhe scan nahi karta
+assets/downloaded_obj/        # OBJ + MTL source: Weapons 40, Nature 66, Characters 16, Vehicles 7
+                               #   .gdignore pada hai (Godot scan nahi karta; CI .glb banata hai)
+assets/models/                 # CI ne banaye .glb (Godot sirf yahin se model uthata hai) — commit NAHI hote
+tools/obj2glb.py               # OBJ+MTL -> GLB converter (weapons/nature/characters/vehicles, pure python)
+tools/fbx2glb.py               # FBX 7.x -> GLB converter (pure python, koi pip/numpy nahi)
+tools/glbcheck.py              # .glb files ki jaanch (header/accessor/normals) — CI step 7e
+tools/gdcheckrefs.py           # Har Helper.func() call aur parameter count ki cross-check — CI step 8b
+docs/model-assets-notes.md     # Ye sab kaise kaam karta hai (aur .gdignore kyun hai)
+docs/obj-weapons-report.md     # OBJ weapons pack ka report (mapping + verify checklist)
+docs/obj-all-assets-report.md  # Nature + characters + vehicles + buildings ka report
+docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf — isi se verify hua)
+
+.github/workflows/build-apk.yml # GitHub Actions: FBX->GLB convert + Godot 4.2.2 + keystore + selftest + APK export + upload
 ```
 
 ---
@@ -146,6 +173,8 @@ scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho w
 | Enemy speed / HP / damage | `scenes/enemy.tscn` khologe to inspector me dikhega, ya `scripts/enemy.gd` ke `@export` defaults |
 | Kitne enemies + spawn speed | `scenes/main.tscn` → `Main` node ke inspector me (`max_enemies`, `spawn_interval`) |
 | Maidan ka size / cover boxes | `scripts/main.gd` → `arena_size` aur `_obstacles` list |
+| Buildings (kitni/kahan) | `scripts/main.gd` → `BUILDING_PLAN` (zone ke hisaab se list) |
+| Building ka size / darwaza / furniture | `scripts/building_builder.gd` → `SIZES`, `DOOR_SIZE`, `_add_furniture()` |
 | Ped / patthar / jhaadi / ghaas ki ginti | `scripts/main.gd` → `tree_count`, `rock_count`, `bush_count`, `grass_count` |
 | Nature ka layout (kahan kya uge) | `scripts/main.gd` → `nature_seed` (same seed = same map) |
 | Kisi bhi gun ka damage / ammo / speed | `scripts/weapon_data.gd` → us gun ki line (ek hi line me sab hai) |
@@ -153,6 +182,14 @@ scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho w
 | Naye colour add karne ho | `scripts/weapon_data.gd` ke top pe `const MY_COLOR := Color(...)` |
 | Reload time | `scripts/weapon_manager.gd` → `reload_time` (default 1.2) |
 | Gun ka size screen pe | `scenes/player.tscn` → `Head/Camera3D/WeaponHolder` ki position, aur `weapon_manager.gd` ka `model_scale` (0.7) |
+| Gun (3D model) ki asli lambai | `scripts/assets.gd` → `WEAPON_TARGET_LENGTH` (pistol 0.30, smg 0.60, rifle 1.20, sniper 1.40, shotgun 1.10 m) |
+| Kisi ek gun ko bada/chhota karna | `scripts/weapon_data.gd` → us gun ki line me `"scale": 1.3` (Bizon/Skorpion isi tarah set hue hain) |
+| Character ki height | `scripts/assets.gd` → `CHARACTER_HEIGHT` (1.8 m) aur `scripts/character_data.gd` → `ENEMY_HEIGHT` |
+| Enemy ka rang (dark red) | `scripts/character_data.gd` → `ENEMY_TINT` (default `Color(0.55, 0.12, 0.12)`) |
+| Player ke body ka model / rang | `scripts/character_data.gd` → `get_characters()` ki list (Rey→male_1, Zen→male_2, ...) |
+| Gaadi ki lambai | `scripts/assets.gd` → `VEHICLE_LENGTH` (4.4 m) |
+| Gaadi kis zone me kaunsi | `scripts/main.gd` → `_spawn_vehicles()` ka zone table (Chowk taxi+sedan, Haveli cop_car, ...) |
+| Nature ki max hadd | `scripts/main.gd` → `max_trees` (80) / `max_rocks` (50) — hadd pe pahunchne pe warning aati hai |
 | Enemy ka HP | `scripts/enemy.gd` → `max_health` (abhi **200** — pistol ~7, sniper 2-3 goli) |
 | Player ki HP | `scripts/player.gd` → `max_health` (abhi 100) — HP bar apne aap isi ke hisaab se set hoti hai |
 | Score per kill | `scripts/main.gd` → `_on_enemy_died()` me `score += 10` |
@@ -162,34 +199,63 @@ Tip: har script ke `@export` variables Godot editor me Inspector me dikhte hain 
 
 ---
 
-## 5b. Asset Sources (build ke waqt download hote hain)
+## 5b. Model assets (CC0 Quaternius + procedural fallback)
 
-Game me do tarah ke models hain:
+Game me models **3 layer** se aate hain — upar wala mile to wahi, warna neeche wala:
 
-1. **Downloaded CC0 models** — GitHub Actions build ke waqt inhe `assets/downloaded/`
-   me bharta hai (workflow step **7c**). Ye files repo me commit NAHI hoti
-   (`.gitignore` me `assets/downloaded/` hai) — isliye repo halka rehta hai aur
-   APK me sirf wahi model jaate hain jo game use karta hai.
-2. **Procedural fallback** — agar download fail ho jaye (net/github down, ya koi file
-   missing), `scripts/assets.gd` wahi model **code se** bana deta hai (boxes/cones).
-   Build tab bhi **pass** hota hai — sirf shapes simple ho jaate hain.
+1. **Repo me pade CC0 source files** — `assets/downloaded/<category>/` (Quaternius ke
+   `.fbx`). Is folder me `.gdignore` pada hai, isliye **Godot inhe scan nahi karta**
+   (Godot 4 me FBX importer hai hi nahi, aur bade packs pe uska import scan hang ho jata hai).
+2. **CI ka conversion + import** — build ke waqt:
+   - step **7d**: `tools/obj2glb.py` OBJ+MTL (weapons) ko `.glb` me badalta hai,
+     aur `assets/models/weapons/` me daalta hai. Ye pack me har gun ka barrel **+X**
+     taraf hota hai → converter usko **-Z** pe ghumata hai (game ko wahi chahiye),
+     aur winding bhi check karta hai (model andar se bahar na dikhe).
+   - step **7d-b**: `tools/fbx2glb.py` baaki FBX (nature/characters/vehicles) ka kaam
+     karta hai (`--skip-existing`, isliye weapons ke `.glb` OBJ se hi bante hain).
+   - **Godot sirf** `assets/models/` **se** models padhta hai. Ye `.glb` commit NAHI hote —
+     har build pe bante hain (aur cache hote hain, isliye build tezz rehta hai).
+   - step **7e** har `.glb` ko check karta hai (`glbcheck.py`), step **8d** game ka apna
+     selftest chalata hai (loader + har gun ka model/muzzle + fail-soft test).
+3. **Procedural fallback** — kuch bhi na mile (file delete, conversion fail, folder
+   hi gayab), to `scripts/assets.gd` wahi model **code se** bana deta hai (box/cone/
+   cylinder). Build **pass** hota hai, game chalta hai — bas shape simple ho jata hai.
 
-| Pack | Kya use hota hai | License | Source | Pinned commit |
+| Category | Kya use hota hai | Kitni files | License | Source |
 |---|---|---|---|---|
-| **Kenney Nature Kit 2.1** (by Kenney, kenney.nl) | 14 `.glb` models — trees (5), rocks (4), bushes (3), grass (2) | **CC0 1.0** (public domain) | https://github.com/ETdoFresh/kenney.nl (kenney.nl mirror) → `kenney_natureKit_2.1/Models/GLTF format/` | `45df48c4d45f8716216b1a9e22df0b69cd9f5932` |
-| Original pack page | — | CC0 1.0 | https://kenney.nl/assets/nature-kit | — |
+| `weapons` | **40 models**: AssaultRifle 1-5 + AssaultRifle2 1-4, Bullpup 1-3, SubmachineGun 1-5, SniperRifle 1-6, Shotgun 1-4 + SawedOff + ShortStock, Pistol 1-6, Revolver 1-5 | 40 (OBJ+MTL) | **CC0 1.0** | Quaternius (low-poly weapon pack) — source: `assets/downloaded_obj/Weapons/`, license: `assets/downloaded_obj/LICENSE.txt` |
+| `characters` | Male/Female Casual, Shirt, Suit, LongSleeve, Dress, TankTop, Alternative, + Smooth wale | 16 | **CC0 1.0** | Quaternius (`assets/downloaded/Characters/License.txt`) |
+| `vehicles` | Taxi, Cop, SUV, SportsCar, SportsCar2 | 5 | **CC0 1.0** | Quaternius (`assets/downloaded/Vehicles/License.txt`) |
+| `nature` | PineTree 1-4, Rock 1-5, Plant 1-2, Plant_Flowers, Grass Small/Large/Extruded | 15 | **CC0 1.0** | Quaternius Ultimate Platformer pack (`License_nature.txt`) |
+| `nature` (backup) | Kenney Nature Kit 2.1 — 14 `.glb` (step **7c** download karta hai, fail-soft) | 14 | **CC0 1.0** | https://kenney.nl/assets/nature-kit |
 
-- License text (har pack ke andar): `kenney_natureKit_2.1/License.txt` → *"License: (Creative Commons Zero, CC0) http://creativecommons.org/publicdomain/zero/1.0/"*
-- CC0 ka matlab: commercial use, modify, redistribute — sab allowed, credit ki zaroorat bhi nahi.
-  Phir bhi credit diya gaya hai (upar table me) — achhi practice hai.
-- Total size: **~145 KB** (sabse bada tree 31 KB) — APK size par asar na ke barabar hai.
-- Download URL pinned commit pe hai, isliye upstream repo update hone se build nahi tootega.
+- CC0 ka matlab: commercial use, modify, redistribute — sab allowed, credit zaroori nahi.
+  Phir bhi credit diya gaya hai (upar table) — achhi practice hai.
+- Total converted size ~**7.9 MB** (33.5 MB FBX → 7.5 MB GLB) — APK par iska asar chhota hai.
+- **Kaun model kahan lagta hai?** (sab `scripts/` me data ki tarah likha hai — code chhedne
+  ki zaroorat nahi):
+  - Guns → `scripts/weapon_data.gd` ke `"model"` field (jaise `"AK": {"model": "ar_5"}`).
+    Naam ka matlab `assets/models/weapons/` ki file hai: `ar_5` = `AssaultRifle_5`.
+    Pistols bhi models use karte hain: `pistol_1` = `Pistol_1.glb`, `revolver_1` = `Revolver_1.glb`.
+  - Player/enemy → `scripts/character_data.gd` (10 characters me se har ek ko `male_1`
+    jaise naam mila hai; `male_1..8` / `female_1..8` ka matlab `asset_loader.gd` ki
+    `CHARACTER_FILES` list se hota hai).
+  - Ped/patthar/ghaas → `scripts/main.gd` ke zone rules + `scripts/assets.gd` ke
+    `tree()/rock()/grass_tuft()/plant()`.
+  - Gaadi → `scripts/assets.gd` ke `VEHICLE_FILES` alias (`taxi`, `cop_car`, `suv`, ...).
+- **Naya model add karna ho** (OBJ/FBX/GLB — sab chalta hai, par ek baar convert karna padta hai):
+  1. File upload karo: weapons ke liye `assets/downloaded_obj/Weapons/` (`.obj` + uska `.mtl`
+     dono), baaki categories ke liye `assets/downloaded/<category>/` (`weapons`, `nature`,
+     `Characters`, `Vehicles`).
+  2. Naam se usko game me bulana hai: `ar_10` jaisa naam prefix se match hona chahiye. Naye
+     group ka naam ho (jaise `AssaultRifle2_*`) to `scripts/asset_loader.gd` ke `SECOND_GROUP`
+     ya `SPECIAL_ALIASES` me ek line add karo.
+  3. Push karo — CI khud convert karega. Log me step **7d** me `X/X converted` dikhega.
 
-> Ek note: jo sources pehle socho gaye the — `Malcolmnixon/Quaternius-Nature` (repo
-> exist hi nahi karta) aur `Malcolmnixon/Shapespark-Low-Poly-Exterior-Plants` (usme
-> `.glb` nahi hain, Godot `.tscn` hain, aur original assets Git-LFS pe hain) — dono
-> build-time `curl` ke liye kaam nahi karte. Isliye **Kenney Nature Kit** chuna gaya:
-> plain `.glb` files, koi LFS nahi, clearly CC0.
+> Purana note (history): pehle nature models Kenney repos se build ke waqt download hote the,
+> kyunki `Malcolmnixon/Quaternius-Nature` jaisa repo exist hi nahi karta tha aur `Shapespark`
+> pack me `.glb` ki jagah Godot `.tscn` files (Git-LFS pe) thi. Ab Quaternius ke FBX repo me
+> pade hain, isliye download ki zaroorat nahi — Kenney sirf backup ke liye reh gaya hai.
 
 ## 6. Kuch galat ho to (troubleshooting)
 
@@ -200,7 +266,10 @@ Game me do tarah ke models hain:
 | Phone pe "App not installed" | Purana app uninstall karo (test keystore badal jata hai), ya Settings me "unknown sources" allow karo |
 | Gun badalne/equip karne ke liye mobile pe | **SWAP** (agla gun) ya **GUNS** (poori list) — PC pe `Q`/`E`/`G`/`1-9` |
 | Gun-picker khulta hai par tap kaam nahi karta | Ab ye multi-touch safe hai (grid khud raw touch leta hai). Purane build me ye problem thi — naya APK install karo |
-| Ped/patthar simple box jaise dikh rahe hain | Download fail hua (procedural fallback chal raha hai) — Actions log me step **7c** dekho, `nature models ready: N` line milegi (N = 14 matlab sab download hue) |
+| Ped/patthar simple box jaise dikh rahe hain | Downloaded model nahi mila (procedural fallback chal raha hai). Actions log me step **7d** me `convert ho gaye: 80 glb` aur step **8d** me `SELFTEST PASS: 171/171` dhundo — dono theek hone chahiye |
+| Gun ka model nahi dikh raha / gun gol gol hai | Us gun ka `"model"` naam `assets/models/weapons/` ki file se match nahi kar raha. Log me `AssetLoader: model nahi mila -> weapons/<naam>` milega. `scripts/asset_loader.gd` ke `FILE_PREFIXES` / `SECOND_GROUP` / `SPECIAL_ALIASES` me alias add kar do |
+| Naya model upload kiya par game me purana hi dikh raha | Step **7b** ka cache purana `.glb` de raha hai — cache key `assets/downloaded/**/*.fbx` ke hash pe hai, isliye naya file aane pe apne aap naya cache ban jata hai. Phir bhi purana dikhe to Actions me “Re-run all jobs” karo |
+| Selftest (8d) fail hua | Failed commit ke neeche **comment** me poora selftest output aata hai (kaunsa check toota, kitne me se kitne). Wo output bhej do, fix ho jayega |
 | Game khulta hai par touch kaam nahi karta | Confirm karo ki build **Android** ke liye hua (PC/other platform ke liye nahi) aur `hud.tscn` me `TouchControls` node hai |
 | Game crash / black screen | Android me `adb logcat` chalao ya phone pe crash dialog ka text bhej do |
 | PC pe test karna hai | PC pe **Godot 4.2.2** install karo (free, ~100 MB) → `project.godot` import karo → `F5` dabao |
@@ -214,7 +283,8 @@ Game me do tarah ke models hain:
 
 - Sound: `AudioStreamPlayer` + procedurally generated beeps (`AudioStreamGenerator`) ya free `.wav` add karke
 - Reload + ammo system, headshot bonus, enemy health bar
-- Multiple weapons (2-3 gun models already code se banti hain)
+- Naye guns (model + ek line `weapon_data.gd` me) — dekho section **5b**
+- Models upgrade karna (naye `.fbx`/`.obj` `assets/downloaded/` me daalo, CI khud convert karega)
 - Waves / levels, high score save (`user://` me JSON)
 - Enemy ko dodge karna sikhana, ya sniper enemy
 
@@ -222,5 +292,12 @@ Game me do tarah ke models hain:
 
 ## Credit / License
 
-Sab code is repo me likha gaya hai — koi third-party asset nahi.
-Game code: MIT style, jo chaho karo. Godot Engine ka apna license (MIT) hai.
+- **Game ka code** is repo me likha gaya hai (MIT style — jo chaho karo).
+- **Godot Engine** ka apna license (MIT) hai.
+- **3D models**: [Quaternius](https://quaternius.com) ke low-poly packs
+  (weapons / characters / vehicles / nature) — **CC0 1.0 (public domain)**.
+  License text har folder me pada hai: `assets/downloaded/*/License*.txt`.
+- **Kenney Nature Kit 2.1** (backup nature models, build ke waqt optional download) —
+  [kenney.nl](https://kenney.nl/assets/nature-kit), **CC0 1.0**.
+- CC0 me credit ki zaroorat nahi, phir bhi dono creators ko credit diya gaya hai — achhi practice.
+- Converted `.glb` files repo me commit nahi hote (CI har build pe banata hai).

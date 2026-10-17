@@ -11,12 +11,20 @@ extends CharacterBody3D
 ## auto/semi, pellets). Player sirf trigger dabaya gaya hai ya nahi wo dekhta hai
 ## aur bullet spawn karta hai.
 ##
+## APNA BODY (Phase 4): character_data.gd se character chuno -> downloaded OBJ model
+## se poora humanoid banta hai. Body render layer 2 pe hai aur camera use nahi dekhta
+## (spec: FPS me apna body invisible). Neeche dekhne pe apne
+## kapde/arm dikhte hain. Sirf SAR chhupaya jata hai (camera usi ke andar hai).
+## Model na mile to kuch nahi lagta — pehle jaisa invisible body (koi error nahi).
+##
 
 signal health_changed(health: int)
 signal died
 
 const BULLET_SCENE := preload("res://scenes/bullet.tscn")
 const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
+const ASSETS := preload("res://scripts/assets.gd")
+const CHARACTERS := preload("res://scripts/character_data.gd")
 
 @export_group("Movement")
 @export var move_speed: float = 6.0           ## m/s
@@ -27,6 +35,11 @@ const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
 @export var mouse_sensitivity: float = 0.0025
 @export var touch_sensitivity: float = 0.005
 @export var pitch_limit_deg: float = 85.0
+
+@export_group("Body")
+@export var character_index: int = 0          ## kaunsa character (character_data.gd ka index)
+@export var show_body: bool = true            ## apna body dikhana hai? (false = invisible FPS body)
+@export var name_tag: bool = true             ## sar ke upar naam dikhana hai?
 
 @export_group("Combat")
 @export var max_health: int = 100             ## spec: start 100 HP
@@ -65,6 +78,9 @@ func _ready() -> void:
 	_is_mobile = OS.has_feature("mobile")
 	_holder_base = weapon_holder.position
 
+	# apna body (downloaded character model) — camera ke neeche, isliye dekhne pe dikhta hai
+	_build_body()
+
 	# WeaponManager banao aur usko apna holder de do
 	weapon_manager = WEAPON_MANAGER.new()
 	weapon_manager.name = "WeaponManager"
@@ -74,6 +90,67 @@ func _ready() -> void:
 	# PC pe mouse ko capture karo (ESC se free hota hai)
 	if not _is_mobile:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+# ------------------------------------------------------------- apna body -----
+
+## Character ka visible body banao (3rd person me bhi kaam aayega).
+## Fail-soft: model na mile to kuch nahi hota (body invisible — pehle jaisa game).
+func _build_body() -> void:
+	if not show_body:
+		return
+	var data: Dictionary = CHARACTERS.get_character(character_index)
+	if data.is_empty():
+		return
+
+	var model := ASSETS.build_character_model(
+			String(data.get("model", "male_1")),
+			data.get("body", Color(0.25, 0.45, 0.70)),
+			data.get("accent", Color(0.14, 0.16, 0.22)))
+	if model == null:
+		return          # asset nahi mila -> procedural fallback = invisible body
+
+	model.name = "Body"
+	# NOTE: body me koi collision shape nahi hota (sirf dikhta hai) — player ki apni
+	# capsule hi takkar handle karti hai.
+	add_child(model)
+
+	if name_tag:
+		_add_name_tag(model, CHARACTERS.display_name(character_index))
+
+	# ---- FPS invisibility (spec) ----
+	# Body + naam ka tag render layer 2 pe bhejo, aur apne camera ka cull_mask se
+	# layer 2 hata do. Matlab: apni body khud ko nahi dikhti (koi first-person me
+	# apna sar/chest nahi dekhna chahta), par light/shadow pe asar rehta hai aur
+	# koi doosra camera (future third-person) use dekh sakta hai.
+	ASSETS.set_render_layer(model, CHARACTERS.PLAYER_BODY_LAYER)
+	camera.cull_mask = camera.cull_mask & ~(1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
+
+
+## Sar ke upar chhota naam (Label3D) — apne body pe bhi lagta hai taaki agar
+## kabhi third-person camera aaye to naam dikhe.
+func _add_name_tag(parent: Node3D, text: String) -> void:
+	var label := Label3D.new()
+	label.name = "NameTag"
+	label.text = text
+	label.font_size = 48
+	label.pixel_size = 0.004
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = false
+	label.modulate = Color(0.95, 0.96, 1.0)
+	label.outline_size = 8
+	label.outline_modulate = Color(0.05, 0.06, 0.10, 0.9)
+	label.position = Vector3(0.0, ASSETS.CHARACTER_HEIGHT + 0.28, 0.0)
+	parent.add_child(label)
+
+
+## Character badlo (HUD / character-select screen isko call kar sakta hai)
+func set_character(index: int) -> void:
+	character_index = index
+	var old := get_node_or_null("Body")
+	if old != null:
+		old.queue_free()
+	_build_body()
 
 
 # ------------------------------------------------------------- input setup ---

@@ -39,5 +39,23 @@ Thumbs.db
 # CI build log (workflow ikattha karta hai)
 build-log.txt
 
-# CI/downloaded assets (GitHub Actions build ke waqt bharta hai — .glb files)
-assets/downloaded/
+# CC0 model SOURCE files repo me rehte hain: FBX (assets/downloaded/) aur OBJ+MTL
+# (assets/downloaded_obj/). Godot inhe padh nahi sakta, isliye build ke waqt
+# tools/fbx2glb.py + tools/obj2glb.py unhe .glb me convert karte hain — dekho
+# .github/workflows/build-apk.yml step "7d"/"7d-obj". Converted .glb commit NAHI karte.
+assets/downloaded/**/*.glb
+assets/downloaded/**/*.gltf
+assets/downloaded/**/*.fbx.import
+assets/downloaded_obj/**/*.glb
+assets/downloaded_obj/**/*.gltf
+assets/downloaded_obj/**/*.obj.import
+
+# Build ke waqt bane reports
+build/glb-report.json
+
+# QA renders (tools/glbpreview.py se bante hain — sirf dekhne ke liye)
+qa-renders/
+
+# Python cache (tools/fbx2glb.py CI me chalta hai)
+__pycache__/
+*.pyc
