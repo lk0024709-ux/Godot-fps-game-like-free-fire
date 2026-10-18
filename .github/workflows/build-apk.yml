@@ -613,8 +613,8 @@ jobs:
           set -euo pipefail
           touch "$DIAG"
           APK=""
-          if [ -f "$GITHUB_WORKSPACE/build/FreeFireFPS.apk" ]; then
-            APK="$GITHUB_WORKSPACE/build/FreeFireFPS.apk"
+          if [ -f "$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk" ]; then
+            APK="$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk"
           else
             APK=$(find "$GITHUB_WORKSPACE" -name '*.apk' -not -path '*/android/*' -not -path '*/.git/*' | head -n 1 || true)
           fi
@@ -622,14 +622,14 @@ jobs:
             echo "::error::APK nahi bana — step 9 ka output dekho"
             exit 1
           fi
-          cp "$APK" "$GITHUB_WORKSPACE/FreeFireFPS.apk"
-          ls -lh "$GITHUB_WORKSPACE/FreeFireFPS.apk" | tee -a "$DIAG"
+          cp "$APK" "$GITHUB_WORKSPACE/Indus_Battle_Royal.apk"
+          ls -lh "$GITHUB_WORKSPACE/Indus_Battle_Royal.apk" | tee -a "$DIAG"
 
       - name: "11) APK upload (workflow page se download)"
         uses: actions/upload-artifact@v4
         with:
-          name: FreeFireFPS-apk
-          path: FreeFireFPS.apk
+          name: Indus_Battle_Royal-apk
+          path: Indus_Battle_Royal.apk
           if-no-files-found: error
 
       # Phone pe install karna aasan: "latest-apk" release me pakka download link
@@ -640,7 +640,7 @@ jobs:
         run: |
           gh release view latest-apk >/dev/null 2>&1 || \
             gh release create latest-apk --title "Latest APK" --notes "Automatically built APK. Phone me ye file download karke install karo (Settings me 'install unknown apps' allow karna padega)."
-          gh release upload latest-apk FreeFireFPS.apk --clobber
+          gh release upload latest-apk Indus_Battle_Royal.apk --clobber
 
       # Agar kuch fail ho jaye to error commit-comment me likh do,
       # taaki direct yahin se padha ja sake.
