@@ -1,22 +1,26 @@
 extends Node3D
 ## Headless terrain-only ray and CharacterBody3D walk validation. No gameplay actors/assets.
+##
+## Coordinates are for the 1000m-radius island (Neel Dweep): the old 400m test
+## points multiplied by map.gd's WORLD_SCALE (2.5). Walk distance ~975m, hence
+## the fast probe speed — it must finish inside CI's --quit-after budget.
 
 const MAP_SCENE := preload("res://scenes/map.tscn")
-const WALK_SPEED := 18.0
+const WALK_SPEED := 50.0
 const MAX_TEST_SECONDS := 36.0
 
 var _island: Node3D
 var _walker: CharacterBody3D
 var _waypoints: Array[Vector2] = [
-	Vector2(0.0, -390.0),  # beach start
-	Vector2(0.0, -340.0),  # climb onto the north mountain ring
-	Vector2(0.0, -300.0),
-	Vector2(0.0, -260.0),
-	Vector2(0.0, -220.0),  # north ramp approach
-	Vector2(0.0, -180.0),
-	Vector2(0.0, -140.0),
-	Vector2(0.0, -120.0),  # plateau edge
-	Vector2(0.0, -80.0),
+	Vector2(0.0, -975.0),  # beach start
+	Vector2(0.0, -850.0),  # climb onto the north mountain ring
+	Vector2(0.0, -750.0),
+	Vector2(0.0, -650.0),
+	Vector2(0.0, -550.0),  # north ramp approach
+	Vector2(0.0, -450.0),
+	Vector2(0.0, -350.0),
+	Vector2(0.0, -300.0),  # plateau edge (300m = 120m design x WORLD_SCALE)
+	Vector2(0.0, -200.0),
 	Vector2(0.0, 0.0),  # central plateau
 ]
 var _waypoint_index := 1
@@ -79,15 +83,16 @@ func _physics_process(delta: float) -> void:
 
 
 func _check_ground_rays() -> bool:
+	# Same features as the 400m test, x2.5 (WORLD_SCALE) in XZ.
 	var checks: Array[Dictionary] = [
-		{"label": "beach", "x": 1.3, "z": -389.2},
-		{"label": "north hill", "x": 1.3, "z": -314.2},
-		{"label": "north ramp", "x": 1.3, "z": -179.2},
-		{"label": "south ramp", "x": 1.3, "z": 179.2},
-		{"label": "east ramp", "x": 179.2, "z": 1.3},
-		{"label": "west ramp", "x": -179.2, "z": 1.3},
+		{"label": "beach", "x": 1.3, "z": -973.0},
+		{"label": "north hill", "x": 1.3, "z": -785.5},
+		{"label": "north ramp", "x": 1.3, "z": -448.0},
+		{"label": "south ramp", "x": 1.3, "z": 448.0},
+		{"label": "east ramp", "x": 448.0, "z": 1.3},
+		{"label": "west ramp", "x": -448.0, "z": 1.3},
 		{"label": "plateau", "x": 1.3, "z": 1.3},
-		{"label": "industrial apron", "x": 245.7, "z": -69.2},
+		{"label": "industrial apron", "x": 614.3, "z": -173.0},
 	]
 	var ground := _island.get_node_or_null("IslandGround_ConcaveCollision") as StaticBody3D
 	if ground == null:
