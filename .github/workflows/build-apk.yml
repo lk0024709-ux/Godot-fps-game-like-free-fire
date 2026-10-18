@@ -445,12 +445,47 @@ jobs:
           echo "::error::Map build FAIL — buildings/vehicles/nature nahi bane (upar summary dekho)"
           exit 1
 
-      # ---- 8f) UI flow smoke test (splash -> loading -> home -> main) ----
+      # ---- 8f) Terrain-only island collision + walking test ----
+      # Dedicated scene: no gameplay manager, player loadout, buildings, vehicles, or enemies.
+      # It ray-checks beach/hill/ramp/plateau/industrial ground, then walks a probe capsule
+      # from the beach up the north ramp to prove the collision remains continuous.
+      - name: "8f) Terrain-only island ray + walkability test"
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/terrain-selftest.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 2400 \
+            scenes/terrain_selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+          {
+            echo "## Terrain-only island collision and walkability test"
+            echo ""
+            echo '```'
+            grep -E "TERRAIN_SELFTEST|ISLAND:|SCRIPT ERROR|ERROR:" "$LOG" | tail -n 30 || tail -n 30 "$LOG"
+            echo '```'
+            echo "exit code: $RC"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$RC" -eq 0 ] && grep -q "TERRAIN_SELFTEST_PASS" "$LOG"; then
+            echo "::notice::Terrain walkability PASS: beach -> hills -> plateau"
+            exit 0
+          fi
+
+          echo "::error::Terrain collision/walkability test failed"
+          exit 1
+
+      # ---- 8g) UI flow smoke test (splash -> loading -> home -> main) ----
       # Poora UI flow headless chalta hai. `--fixed-fps 60` isliye ki headless me
       # frames bahut tez chalte hain, par Tween/Timer "game time" pe chalte hain —
       # fixed fps se 1200 frames = 20 second ka game time milta hai.
       # Har screen apna marker print karti hai; koi marker na mile to step RED.
-      - name: "8f) UI flow smoke test (splash -> loading -> home)"
+      - name: "8g) UI flow smoke test (splash -> loading -> home)"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
