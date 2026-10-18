@@ -4,6 +4,9 @@ extends CanvasLayer
 ## - Crosshair (beech me), Health bar (upar baayein), Score (upar daayein)
 ## - Weapon name (font 26) + ammo "12 / 30" (font 40) bottom-right
 ## - Mobile touch controls: joystick (bottom-left), FIRE / JUMP / RELOAD / SWAP / GUNS
+##   + SPRINT button (joystick ke paas — sprint me player 10 m/s chalta hai)
+## - Plane drop UI: bada JUMP OUT button + auto-eject countdown (match start me)
+## - Toast label: "PARACHUTE DEPLOYED!" / "Landed!" jaisi chhoti info
 ## - GUNS button se poora weapon-picker khulta hai (28 guns, skin colour ke saath)
 ## - Game over panel + "TAP TO RESTART"
 ##
@@ -15,6 +18,11 @@ signal fire_pressed
 signal fire_released
 signal jump_pressed
 signal restart_pressed
+## PLANE DROP: JUMP OUT button dabaya gaya (main.gd isse eject karta hai)
+signal jump_out_pressed
+## SPRINT button (mobile) — press/release player.gd ko jata hai
+signal sprint_pressed
+signal sprint_released
 ## Gun-picker se weapon chuna gaya (index). NOTE: switch pehle hi ho chuka hota hai
 ## (HUD khud weapon_manager.switch_weapon(index) call karta hai) — ye signal sirf
 ## "user ne ye chuna" batane ke liye hai, isliye ise dobara switch karne ke liye use mat karo.
@@ -43,12 +51,19 @@ const DATA := preload("res://scripts/weapon_data.gd")
 @onready var final_score_label: Label = $GameOverPanel/FinalScoreLabel
 @onready var restart_button: Button = $GameOverPanel/RestartButton
 @onready var damage_flash: ColorRect = $DamageFlash
+@onready var sprint_button: Control = $TouchControls/SprintButton      # touch_button.gd wala
+@onready var drop_panel: Control = $DropPanel                          # plane-drop ka UI
+@onready var drop_countdown_label: Label = $DropPanel/CountdownLabel
+@onready var drop_hint_label: Label = $DropPanel/HintLabel
+@onready var jump_out_button: Control = $DropPanel/JumpOutButton       # touch_button.gd wala
+@onready var toast_label: Label = $ToastLabel                          # "Landed!" jaisi chhoti info
 
 var weapon_manager: Node = null          ## main.gd bind_weapon_manager() se set karta hai
 
 var _restarting: bool = false
 var _ammo_max: int = 0
 var _weapon_buttons: Array[Button] = []
+var _toast_tween: Tween = null
 
 
 func _ready() -> void:
@@ -57,6 +72,8 @@ func _ready() -> void:
 	set_score(0)
 	game_over_panel.visible = false
 	weapon_panel.visible = false
+	drop_panel.visible = false              # plane-drop UI sirf match start me
+	toast_label.modulate.a = 0.0            # toast shuru me chhupa
 
 	damage_flash.color = Color(0.8, 0.05, 0.05, 0.0)
 	damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -76,6 +93,9 @@ func _ready() -> void:
 	guns_button.pressed.connect(_on_guns_button_pressed)
 	restart_button.pressed.connect(_on_restart_button_pressed)
 	close_button.pressed.connect(close_weapon_menu)
+	sprint_button.pressed.connect(_on_sprint_button_down)
+	sprint_button.released.connect(_on_sprint_button_up)
+	jump_out_button.pressed.connect(_on_jump_out_button_pressed)
 
 	# Game over panel pe kahin bhi tap karo -> restart (touch pe pakka kaam karta hai)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -291,6 +311,37 @@ func hide_reloading() -> void:
 	_on_reload_finished()
 
 
+# ==================================================== plane drop ka UI =======
+
+## Match shuru: JUMP OUT button + countdown dikhao (PC + mobile dono)
+func show_drop_ui() -> void:
+	close_weapon_menu()
+	drop_panel.visible = true
+
+
+func hide_drop_ui() -> void:
+	drop_panel.visible = false
+
+
+## main.gd har physics frame isko call karta hai (seconds_left float)
+func set_drop_countdown(seconds_left: float) -> void:
+	var s := int(ceilf(maxf(0.0, seconds_left)))
+	drop_countdown_label.text = "AUTO-EJECT IN %ds" % s
+
+
+## Chhoti si info screen ke beech me ("PARACHUTE DEPLOYED!", "Landed!") —
+## audio asset nahi hai isliye landing pe ye text hi feedback hai.
+func show_toast(text: String, hold_time: float = 1.2) -> void:
+	toast_label.text = text
+	if _toast_tween != null and _toast_tween.is_valid():
+		_toast_tween.kill()
+	toast_label.modulate.a = 0.0
+	_toast_tween = create_tween()
+	_toast_tween.tween_property(toast_label, "modulate:a", 1.0, 0.12)
+	_toast_tween.tween_interval(hold_time)
+	_toast_tween.tween_property(toast_label, "modulate:a", 0.0, 0.5)
+
+
 # ============================================================ values dikhana ==
 
 ## HP bar ka maximum set karo (main.gd player.max_health se call karta hai).
@@ -327,6 +378,7 @@ func flash_damage() -> void:
 
 func show_game_over(final_score: int) -> void:
 	close_weapon_menu()
+	hide_drop_ui()
 	final_score_label.text = "SCORE: %d" % final_score
 	game_over_panel.visible = true
 	touch_controls.visible = false     # marne ke baad controls hata do
@@ -370,6 +422,18 @@ func _on_reload_button_pressed() -> void:
 func _on_swap_button_pressed() -> void:
 	if weapon_manager != null and is_instance_valid(weapon_manager):
 		weapon_manager.next_weapon()
+
+
+func _on_sprint_button_down() -> void:
+	sprint_pressed.emit()
+
+
+func _on_sprint_button_up() -> void:
+	sprint_released.emit()
+
+
+func _on_jump_out_button_pressed() -> void:
+	jump_out_pressed.emit()
 
 
 func _on_restart_button_pressed() -> void:

@@ -20,6 +20,10 @@ extends CharacterBody3D
 
 signal health_changed(health: int)
 signal died
+## PLANE DROP (Battle Royale start): plane se kudne ke signals
+signal ejected                ## plane se kud gaya (free-fall shuru)
+signal parachute_opened       ## 50m pe chhatri khul gayi
+signal landed                 ## zameen pe land — normal FPS wapas
 
 const BULLET_SCENE := preload("res://scenes/bullet.tscn")
 const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
@@ -30,6 +34,28 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var move_speed: float = 6.0           ## m/s
 @export var jump_velocity: float = 4.8
 @export var gravity: float = 18.0
+
+@export_group("Sprint")
+## PC: Shift dabaye rakho. Mobile: HUD ka SPRINT button (joystick ke paas).
+## Sprint me speed 6.0 -> 10.0 m/s, camera FOV 75 -> 85 (smooth lerp), aur
+## weapon me halka bob (tezi ka ehsaas).
+@export var sprint_speed: float = 10.0        ## sprint me itni speed (normal 6.0)
+@export var sprint_fov: float = 85.0          ## sprint me camera FOV (normal 75)
+@export var fov_lerp_speed: float = 6.0       ## FOV kitni jaldi smooth badle
+
+@export_group("Plane Drop")
+## Battle Royale start: match 300m upar plane me shuru hota hai. Player kudta hai
+## (ya 10s me auto-eject), free-fall me steering karta hai, 50m pe chhatri khud
+## khul jati hai (fall speed 5 m/s) aur zameen pe land karke normal FPS mil jata hai.
+@export var base_fov: float = 75.0            ## normal camera FOV
+@export var parachute_height: float = 50.0    ## is height pe parachute khud khulta hai
+@export var parachute_fall_speed: float = 5.0 ## parachute ke saath itni dheere girega
+@export var parachute_steer_speed: float = 8.0   ## parachute me left/right steering
+@export var parachute_decel: float = 60.0     ## chute khulte hi fall speed kitni jaldi kam ho
+@export var freefall_terminal: float = 55.0   ## free-fall ki max speed (terminal velocity)
+@export var freefall_steer_speed: float = 14.0   ## hawa me gliding steering ki speed
+@export var freefall_fov: float = 86.0        ## free-fall me thoda wide FOV (speed feel)
+@export var parachute_fov: float = 78.0       ## parachute me halka wide FOV
 
 @export_group("Look")
 @export var mouse_sensitivity: float = 0.0025
@@ -58,6 +84,20 @@ var health: int = 100
 var is_dead: bool = false
 var is_firing: bool = false
 
+## PLANE DROP ka state machine (Battle Royale):
+##   GROUND    = normal FPS gameplay (chalna/goli)
+##   PLANE     = 300m upar plane ke andar — sirf dekh sakte ho, koi movement/shooting
+##   FREEFALL  = kud gaye — gravity + horizontal steering (gliding), shooting band
+##   PARACHUTE = 50m pe chhatri khuli — fall speed 5 m/s + dheemi steering
+enum DropState { GROUND, PLANE, FREEFALL, PARACHUTE }
+var drop_state: DropState = DropState.GROUND
+
+var _sprint_requested: bool = false   ## HUD ke SPRINT button se (mobile)
+var _is_sprinting_now: bool = false   ## is frame me sach me sprint chal raha hai?
+var _bob_phase: float = 0.0           ## weapon bob ka chakkar (sprint me)
+var _bob_amount: float = 0.0          ## bob kitna dikhe (0 = band, 1 = pura sprint)
+var _parachute: Node3D = null         ## parachute ka procedural mesh (land pe hat jata hai)
+
 # main.gd ye do set karta hai (HUD + bullets ka parent node)
 var hud = null
 var bullet_parent = null
@@ -78,6 +118,7 @@ func _ready() -> void:
 	add_to_group("player")
 	_setup_input()
 	camera.far = camera_far        # bada BR map: horizon door tak dikhe (player.tscn me bhi 3000)
+	camera.fov = base_fov          # sprint/drop me ye smooth badlega (sprint_fov etc.)
 	health = max_health
 	_is_mobile = OS.has_feature("mobile")
 	_holder_base = weapon_holder.position
@@ -167,6 +208,7 @@ func _setup_input() -> void:
 	_add_key("next_weapon", KEY_E)
 	_add_key("reload", KEY_R)
 	_add_key("weapon_menu", KEY_G)
+	_add_key("sprint", KEY_SHIFT)              # PC sprint (mobile: HUD ka SPRINT button)
 	_add_mouse("prev_weapon", MOUSE_BUTTON_WHEEL_UP)
 	_add_mouse("next_weapon", MOUSE_BUTTON_WHEEL_DOWN)
 	for i in 9:
@@ -247,21 +289,31 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	# ---- PLANE DROP SEQUENCE (Battle Royale) ----
+	# In states me normal movement/firing band hai — alag physics loop chalta hai.
+	match drop_state:
+		DropState.PLANE:
+			velocity = Vector3.ZERO        # plane ke andar — main.gd position set karta hai
+			return
+		DropState.FREEFALL:
+			_process_freefall(delta)
+			return
+		DropState.PARACHUTE:
+			_process_parachute(delta)
+			return
+		_:
+			pass                           # GROUND — neeche purana gameplay loop
+
 	_handle_weapon_input()
 	_handle_firing(delta)
 
 	# ---- movement input (keyboard + joystick) ----
-	var input_dir := Vector2.ZERO
-	input_dir.x = Input.get_axis("move_left", "move_right")
-	input_dir.y = Input.get_axis("move_forward", "move_backward")
+	var input_dir := _read_move_input()
 
-	if hud != null:
-		var stick: Vector2 = hud.get_move_vector()
-		if stick.length_squared() > input_dir.length_squared():
-			input_dir = stick
-	if input_dir.length() < 0.15:      # dead-zone
-		input_dir = Vector2.ZERO
-	input_dir = input_dir.limit_length(1.0)
+	# ---- sprint: Shift (PC) ya SPRINT button (mobile) — zameen pe chalte waqt ----
+	var want_sprint: bool = Input.is_action_pressed("sprint") or _sprint_requested
+	_is_sprinting_now = want_sprint and is_on_floor() and input_dir.length() > 0.2 \
+			and not _menu_open()
 
 	var direction := transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)
 	direction.y = 0.0
@@ -274,9 +326,71 @@ func _physics_process(delta: float) -> void:
 		velocity.y = jump_velocity
 	_jump_requested = false
 
-	velocity.x = direction.x * move_speed
-	velocity.z = direction.z * move_speed
+	var speed := move_speed
+	if _is_sprinting_now:
+		speed = sprint_speed               # 6.0 -> 10.0 m/s
+	velocity.x = direction.x * speed
+	velocity.z = direction.z * speed
 	move_and_slide()
+
+
+## Keyboard + joystick ka movement input — ground aur drop dono me use hota hai
+func _read_move_input() -> Vector2:
+	var input_dir := Vector2.ZERO
+	input_dir.x = Input.get_axis("move_left", "move_right")
+	input_dir.y = Input.get_axis("move_forward", "move_backward")
+
+	if hud != null:
+		var stick: Vector2 = hud.get_move_vector()
+		if stick.length_squared() > input_dir.length_squared():
+			input_dir = stick
+	if input_dir.length() < 0.15:      # dead-zone
+		input_dir = Vector2.ZERO
+	return input_dir.limit_length(1.0)
+
+
+# ----------------------------------------------------- plane drop physics ----
+
+## Plane se kudne ke baad ka free-fall: gravity + sirf horizontal steering
+func _process_freefall(delta: float) -> void:
+	# gravity, par terminal velocity se aage nahi
+	velocity.y = maxf(velocity.y - gravity * delta, -freefall_terminal)
+
+	# gliding: WASD / joystick se hawa me idhar-udhar
+	var input_dir := _read_move_input()
+	var direction := transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)
+	direction.y = 0.0
+	direction = direction.normalized()
+	var blend := minf(1.0, delta * 3.0)
+	velocity.x = lerpf(velocity.x, direction.x * freefall_steer_speed, blend)
+	velocity.z = lerpf(velocity.z, direction.z * freefall_steer_speed, blend)
+
+	move_and_slide()
+
+	if global_position.y <= parachute_height:
+		_deploy_parachute()
+	elif is_on_floor():
+		_land()                            # parachute ke bina hi zameen mil gayi — phir bhi safe
+
+
+## Parachute khula: fall speed 5 m/s + dheemi steering, zameen pe land
+func _process_parachute(delta: float) -> void:
+	# tez girte hue chute khuli -> fall speed smooth ho kar 5 m/s pe settle
+	velocity.y = move_toward(velocity.y, -parachute_fall_speed, parachute_decel * delta)
+
+	var input_dir := _read_move_input()
+	var direction := transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)
+	direction.y = 0.0
+	direction = direction.normalized()
+	var blend := minf(1.0, delta * 4.0)
+	velocity.x = lerpf(velocity.x, direction.x * parachute_steer_speed, blend)
+	velocity.z = lerpf(velocity.z, direction.z * parachute_steer_speed, blend)
+
+	move_and_slide()
+	_animate_parachute(delta)
+
+	if is_on_floor():
+		_land()
 
 
 ## Camera ka pitch + recoil har frame lagana
@@ -295,6 +409,122 @@ func _apply_look(delta: float) -> void:
 		_flash_timer -= delta
 	if weapon_manager != null and is_instance_valid(weapon_manager) and weapon_manager.muzzle != null:
 		weapon_manager.muzzle.visible = _flash_timer > 0.0
+
+	_update_camera_fov(delta)
+	_update_weapon_bob(delta)
+
+
+## Camera FOV smooth lerp: sprint me 75 -> 85, rukte hi wapas 75.
+## Free-fall/parachute me bhi thoda wide FOV (speed ka feel).
+func _update_camera_fov(delta: float) -> void:
+	var target := base_fov
+	match drop_state:
+		DropState.FREEFALL:
+			target = freefall_fov
+		DropState.PARACHUTE:
+			target = parachute_fov
+		_:
+			if _is_sprinting_now:
+				target = sprint_fov
+	camera.fov = lerpf(camera.fov, target, minf(1.0, delta * fov_lerp_speed))
+
+
+## Sprint ke waqt weapon me halka bob/sway (tezi ka ehsaas), rukte hi shant
+func _update_weapon_bob(delta: float) -> void:
+	var bob_target := 1.0 if _is_sprinting_now else 0.0
+	_bob_amount = move_toward(_bob_amount, bob_target, delta * 4.0)
+	if _bob_amount <= 0.001:
+		return
+	_bob_phase += delta * 11.0
+	var offset := Vector3(sin(_bob_phase) * 0.035, absf(cos(_bob_phase)) * -0.03, 0.0)
+	weapon_holder.position += offset * _bob_amount                 # side-to-side + up-down
+	weapon_holder.rotation.z = deg_to_rad(sin(_bob_phase) * 2.2) * _bob_amount   # halka tilt
+
+
+# ----------------------------------------------- parachute (procedural) ------
+
+## 50m pe chhatri khul gayi — wide cone + 4 ropes, sab EXTREMELY low-poly
+## (8-side cone, koi texture nahi, shadow off — 4GB RAM perf ke liye).
+func _deploy_parachute() -> void:
+	if drop_state != DropState.FREEFALL:
+		return
+	drop_state = DropState.PARACHUTE
+	_build_parachute()
+	parachute_opened.emit()
+
+
+func _build_parachute() -> void:
+	_remove_parachute()
+	var root := Node3D.new()
+	root.name = "Parachute"
+
+	# ---- canopy: ulta cone (top radius bada, niche patla) ----
+	var canopy_mat := StandardMaterial3D.new()
+	canopy_mat.albedo_color = Color(0.85, 0.22, 0.16)   # Free Fire style lal chhatri
+	canopy_mat.roughness = 1.0
+	canopy_mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # niche se dekhne pe bhi dikhe
+	var canopy := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 3.2
+	cone.bottom_radius = 0.12
+	cone.height = 1.5
+	cone.radial_segments = 8        # low-poly: 8 side hi kaafi hain
+	cone.rings = 0
+	cone.material = canopy_mat
+	canopy.mesh = cone
+	canopy.position = Vector3(0.0, 3.6, 0.0)
+	canopy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(canopy)
+
+	# ---- 4 patli ropes: canopy se kandho tak ----
+	var rope_mat := StandardMaterial3D.new()
+	rope_mat.albedo_color = Color(0.12, 0.12, 0.14)
+	rope_mat.roughness = 1.0
+	for i in 4:
+		var angle := TAU * float(i) / 4.0
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var rope := MeshInstance3D.new()
+		var rope_box := BoxMesh.new()
+		rope_box.size = Vector3(0.035, 1.7, 0.035)
+		rope_box.material = rope_mat
+		rope.mesh = rope_box
+		rope.position = Vector3(dir.x * 1.35, 2.1, dir.z * 1.35)
+		rope.rotation = Vector3(dir.z * 0.75, 0.0, -dir.x * 0.75)   # bahar ki taraf jhuka
+		rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(rope)
+
+	# chhota se shuru hoga aur _animate_parachute me khulta dikhega (pop-in)
+	root.scale = Vector3(0.25, 0.25, 0.25)
+	add_child(root)
+	_parachute = root
+
+
+func _remove_parachute() -> void:
+	if _parachute != null and is_instance_valid(_parachute):
+		_parachute.queue_free()
+	_parachute = null
+
+
+## Chhatri ka chhota pop-in + hawa me halka sway
+func _animate_parachute(delta: float) -> void:
+	if _parachute == null or not is_instance_valid(_parachute):
+		return
+	var s := lerpf(_parachute.scale.x, 1.0, minf(1.0, delta * 6.0))
+	_parachute.scale = Vector3(s, s, s)
+	var t := Time.get_ticks_msec() / 1000.0
+	_parachute.rotation = Vector3(cos(t * 1.7) * 0.05, 0.0, sin(t * 2.1) * 0.06)
+
+
+## Zameen pe land: chhatri hatao, normal FPS (shooting + movement) wapas
+func _land() -> void:
+	if drop_state == DropState.GROUND:
+		return
+	drop_state = DropState.GROUND
+	velocity.y = 0.0
+	_remove_parachute()
+	weapon_holder.visible = true
+	_is_sprinting_now = false
+	landed.emit()
 
 
 # -------------------------------------------------------------- weapon keys --
@@ -321,6 +551,45 @@ func _handle_weapon_input() -> void:
 func switch_weapon_next() -> void:
 	if weapon_manager != null and is_instance_valid(weapon_manager):
 		weapon_manager.next_weapon()
+
+
+# ------------------------------------------- plane drop (main.gd call karta) -
+
+## Kya drop sequence chal raha hai (plane/freefall/parachute — zameen pe nahi)?
+func is_dropping() -> bool:
+	return drop_state != DropState.GROUND
+
+
+## Player abhi plane ke andar hai?
+func is_in_plane() -> bool:
+	return drop_state == DropState.PLANE
+
+
+## Match start: main.gd isko call karta hai — player 300m upar plane me baithta hai.
+## Shooting aur ground movement band, sirf look-around chalta hai.
+func begin_plane_drop() -> void:
+	drop_state = DropState.PLANE
+	velocity = Vector3.ZERO
+	is_firing = false
+	_is_sprinting_now = false
+	_bob_amount = 0.0
+	_remove_parachute()
+	weapon_holder.visible = false          # skydive me gun chhupi rehti hai
+
+
+## Plane se bahar kudo (JUMP OUT button / Space / auto-eject)
+func eject_from_plane() -> void:
+	if drop_state != DropState.PLANE:
+		return
+	drop_state = DropState.FREEFALL
+	velocity = Vector3(0.0, -2.0, 0.0)
+	_jump_requested = false
+	ejected.emit()
+
+
+## Mobile HUD: SPRINT button press/release yahan aata hai
+func set_sprint_requested(active: bool) -> void:
+	_sprint_requested = active
 
 
 func switch_weapon_prev() -> void:
@@ -374,6 +643,8 @@ func _handle_firing(delta: float) -> void:
 
 func shoot() -> void:
 	if is_dead or bullet_parent == null or not is_instance_valid(bullet_parent):
+		return
+	if drop_state != DropState.GROUND:     # plane/freefall/parachute me firing band
 		return
 	if weapon_manager == null or not is_instance_valid(weapon_manager):
 		return
@@ -429,6 +700,8 @@ func _spawn_bullet(aim: Vector3, spread_deg: float, damage: float, speed: float)
 func start_firing() -> void:
 	if is_dead or _menu_open():
 		return
+	if drop_state != DropState.GROUND:     # plane/freefall/parachute me firing band
+		return
 	is_firing = true
 	_trigger_ready = true      # pehli goli turant (semi-auto ke liye zaroori)
 	_fire_timer = 0.0
@@ -439,7 +712,7 @@ func stop_firing() -> void:
 
 
 func request_jump() -> void:
-	if not is_dead:
+	if not is_dead and drop_state == DropState.GROUND:
 		_jump_requested = true
 
 
@@ -463,6 +736,7 @@ func die() -> void:
 	is_dead = true
 	is_firing = false
 	velocity = Vector3.ZERO
+	_remove_parachute()
 	if weapon_manager != null and is_instance_valid(weapon_manager):
 		weapon_manager.cancel_reload()
 	if not _is_mobile:

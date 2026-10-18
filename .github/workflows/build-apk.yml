@@ -543,6 +543,52 @@ jobs:
           echo "::error::UI flow FAIL — splash/loading/home/main me se koi step nahi chala"
           exit 1
 
+      # ---- 8h) Battle Royale drop selftest (plane -> jump out -> parachute -> land) ----
+      # Poora core gameplay loop headless: match sky me shuru hota hai, player eject
+      # hota hai, 50m pe parachute khulta hai, zameen pe land + sprint check.
+      # scripts/drop_selftest.gd khud exit code 0/1 deta hai — FAIL hone pe step RED.
+      - name: "8h) Plane drop selftest (jump out + parachute + landing + sprint)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/drop-selftest.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 900 \
+            scenes/drop_selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+          {
+            echo "## Plane drop selftest (BR core loop)"
+            echo ""
+            echo '```'
+            grep -E "\[PASS\]|\[FAIL\]|DROP:|SCRIPT ERROR|ERROR:" "$LOG" | head -30 || tail -30 "$LOG"
+            echo '```'
+            echo "godot exit code: $RC"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$RC" -eq 0 ] && grep -q "DROP SELFTEST PASS" "$LOG"; then
+            echo "::notice::Drop selftest PASS: plane -> eject -> parachute -> landed -> sprint"
+            exit 0
+          fi
+
+          {
+            echo "## Plane drop selftest FAIL (run ${GITHUB_RUN_ID}, exit code ${RC})"
+            echo ""
+            echo '```'
+            grep -E "\[FAIL\]|SCRIPT ERROR|ERROR:|at: " "$LOG" | head -40 || tail -40 "$LOG"
+            echo '```'
+          } > "$RUNNER_TEMP/drop-report.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -F body=@"$RUNNER_TEMP/drop-report.md" || echo "comment post nahi hua"
+          echo "::error::Drop selftest FAIL — plane/parachute/landing/sprint me se kuch toota hai"
+          exit 1
+
       - name: "9) APK export (release)"
         run: |
           set -euo pipefail

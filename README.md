@@ -79,6 +79,9 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 | Poori gun list (28) | `G` | **GUNS** button |
 | Reload | `R` (khali hone pe khud bhi hota hai) | **RELOAD** button |
 | Jump | `Space` | **JUMP** button |
+| **Sprint** | `Shift` dabaye rakho (6 → 10 m/s, FOV 75 → 85) | **SPRINT** button (joystick ke paas) — dabaye rakho |
+| **Plane se kudna (match start)** | `Space` ya **JUMP OUT** button (10s me auto-eject) | **JUMP OUT** button (10s me auto-eject) |
+| **Hawa me steering** | `W A S D` | **joystick** |
 | Mouse free/capture | `Esc` / click | — |
 | Restart (marne ke baad) | `TAP TO RESTART` button | `TAP TO RESTART` button |
 
@@ -86,13 +89,24 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 
 ## 3. Gameplay rules (jo maanga gaya tha)
 
-- First-person camera, **FOV 75**, player ki head height pe
+- **BATTLE ROYALE DROP: match 300m upar plane me shuru** — plane procedural boxes
+  se bana (body/wings/engines/tail — sab low-poly, shadow off) aur 70 m/s se map ke
+  paar udta hai. **JUMP OUT** button (PC: `Space`) ya **10 second** ka countdown
+  (auto-eject). Plane me shooting/movement band, sirf look-around chalta hai
+- **Free-fall**: gravity se girta hai (max 55 m/s), WASD/joystick se hawa me
+  steering. **50m pe parachute khud khulta hai** (8-side cone, low-poly) — fall
+  speed **5 m/s** + steering. Land pe chhatri hati, gun wapas, "Landed!" toast
+- **Dushman land karne ke baad hi spawn hote hain** (drop ke dauran koi fight nahi)
+- First-person camera, **FOV 75** (sprint me 85), player ki head height pe
+- **Sprint: `Shift` / SPRINT button — 6 → 10 m/s**, camera FOV smooth 75 → 85,
+  weapon me halka bob. Rukte hi sab wapas normal
 - Player **100 HP** se shuru, enemy touch = **-10 HP**
 - Enemy marne pe **+10 score**
 - Goli **2 second** me gayab, enemy 2 goli me marta hai, takrayi to damage deti hai
 - Enemies random (8 fixed puntos me se, player se door) spawn hote hain aur chal ke paas aate hain
 - HP 0 → **GAME OVER** screen + restart button
-- Zameen 40×40 (grid shader), cover boxes/pillars, boundary walls, DirectionalLight with shadows
+- Zameen **2000×2000m** (grid shader), cover boxes/pillars, boundary walls, DirectionalLight with shadows
+  (**drop ke dauran shadows off** — 4GB phone pe smooth FPS, land pe wapas on)
 - Touch UI sirf touch-device pe dikhta hai, PC pe nahi
 - **Renderer: mobile** (Android performance ke liye), sab low-poly (koi texture nahi)
 
@@ -160,7 +174,7 @@ scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (b
 scenes/player.tscn             # Player body + head + camera (FOV 75) + gun model
 scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
-scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
+scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS/SPRINT + gun-picker panel + JUMP OUT drop UI
 
 scripts/splash.gd              # Splash ka UI + fade tween + loading.tscn pe transition
 scripts/loading.gd             # Threaded load (load_threaded_request/status) + progress bar + home.tscn
@@ -170,11 +184,13 @@ scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
 scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
 scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
-scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage, body model
+scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, SPRINT (Shift/10 m/s/FOV), firing, health/damage, body model, PLANE DROP states (plane/freefall/parachute/land)
 scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death, humanoid model
 scripts/asset_loader.gd        # Downloaded models load karta hai, char/vehicle/nature aliases ke saath (fail-safe: na mile to null -> procedural)
 scripts/building_builder.gd    # Enterable buildings (ghar/barn/dukaan): deewar ke tukde + darwaza + light + furniture
 scripts/selftest.gd            # Automatic asset test (CI step 8d): loader/muzzle/height/buildings/fail-soft
+scripts/drop_selftest.gd       # Automatic BR drop test (CI step 8h): plane -> jump out -> parachute -> land -> sprint
+scenes/drop_selftest.tscn      # Drop selftest scene (headless CI + phone pe bhi chal sakta hai)
 scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
@@ -209,6 +225,9 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 | Home ka logo | `assets/ui/home_logo.png` daalo (~250x100); na ho to `icon.svg` fallback |
 | Home ke buttons / rang | `scripts/home.gd` → `GOLD`, `PANEL_BG`, `CHIP_BG`, `_panel_style()` |
 | Player speed / jump | `scripts/player.gd` → `move_speed`, `jump_velocity` |
+| Sprint speed / FOV | `scripts/player.gd` → `sprint_speed` (10.0), `sprint_fov` (85.0) |
+| Plane drop (height / speed / countdown) | `scripts/main.gd` → `plane_start`, `plane_speed`, `auto_eject_time`, `plane_drop_enabled` (off = seedha ground match) |
+| Parachute (kab khule / kitni dheere gire) | `scripts/player.gd` → `parachute_height` (50), `parachute_fall_speed` (5.0), `parachute_steer_speed` |
 | Firing speed / damage | `scripts/player.gd` → `fire_cooldown`, `bullet_damage` |
 | Mouse / touch sensitivity | `scripts/player.gd` → `mouse_sensitivity`, `touch_sensitivity` |
 | Enemy speed / HP / damage | `scenes/enemy.tscn` khologe to inspector me dikhega, ya `scripts/enemy.gd` ke `@export` defaults |

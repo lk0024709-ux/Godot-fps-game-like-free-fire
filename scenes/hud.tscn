@@ -334,6 +334,91 @@ font_size = 34
 fill_color = Color(0.85, 0.2, 0.15, 0.5)
 ring_color = Color(1, 0.65, 0.55, 0.75)
 
+[node name="SprintButton" type="Control" parent="TouchControls"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 250.0
+offset_top = -170.0
+offset_right = 350.0
+offset_bottom = -70.0
+grow_vertical = 0
+mouse_filter = 0
+script = ExtResource("3_touch_button")
+label_text = "SPRINT"
+font_size = 18
+fill_color = Color(0.14, 0.5, 0.2, 0.5)
+ring_color = Color(0.6, 1, 0.7, 0.75)
+
+[node name="DropPanel" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CountdownLabel" type="Label" parent="DropPanel"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 72.0
+offset_right = 340.0
+offset_bottom = 122.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.88, 0.4, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 34
+text = "AUTO-EJECT IN 10s"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HintLabel" type="Label" parent="DropPanel"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 126.0
+offset_right = 340.0
+offset_bottom = 154.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.92, 0.95, 1, 0.85)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 17
+text = "Plane se bahar kudo — PC: SPACE | Mobile: button | Steering: WASD / joystick"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="JumpOutButton" type="Control" parent="DropPanel"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -145.0
+offset_top = -250.0
+offset_right = 145.0
+offset_bottom = -140.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 0
+script = ExtResource("3_touch_button")
+label_text = "JUMP OUT"
+font_size = 30
+fill_color = Color(0.95, 0.55, 0.1, 0.6)
+ring_color = Color(1, 0.85, 0.5, 0.8)
+
 [node name="WeaponPanel" type="Control" parent="."]
 visible = false
 layout_mode = 3
@@ -500,3 +585,26 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_restart_normal")
 theme_override_styles/hover = SubResource("StyleBoxFlat_restart_pressed")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_restart_pressed")
 text = "TAP TO RESTART"
+
+[node name="ToastLabel" type="Label" parent="."]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -70.0
+offset_right = 420.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.72, 1, 0.78, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 40
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
