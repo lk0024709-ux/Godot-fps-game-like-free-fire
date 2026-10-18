@@ -80,15 +80,33 @@ func _physics_process(delta: float) -> void:
 
 func _check_ground_rays() -> bool:
 	var checks: Array[Dictionary] = [
-		{"label": "beach", "x": 0.0, "z": -390.0},
-		{"label": "north hill", "x": 0.0, "z": -315.0},
-		{"label": "north ramp", "x": 0.0, "z": -180.0},
-		{"label": "south ramp", "x": 0.0, "z": 180.0},
-		{"label": "east ramp", "x": 180.0, "z": 0.0},
-		{"label": "west ramp", "x": -180.0, "z": 0.0},
-		{"label": "plateau", "x": 0.0, "z": 0.0},
-		{"label": "industrial apron", "x": 245.0, "z": -70.0},
+		{"label": "beach", "x": 1.3, "z": -389.2},
+		{"label": "north hill", "x": 1.3, "z": -314.2},
+		{"label": "north ramp", "x": 1.3, "z": -179.2},
+		{"label": "south ramp", "x": 1.3, "z": 179.2},
+		{"label": "east ramp", "x": 179.2, "z": 1.3},
+		{"label": "west ramp", "x": -179.2, "z": 1.3},
+		{"label": "plateau", "x": 1.3, "z": 1.3},
+		{"label": "industrial apron", "x": 245.7, "z": -69.2},
 	]
+	var ground := _island.get_node_or_null("IslandGround_ConcaveCollision") as StaticBody3D
+	if ground == null:
+		_fail("IslandGround_ConcaveCollision StaticBody3D was not created")
+		return false
+	var collision := ground.get_node_or_null("IslandGroundShape") as CollisionShape3D
+	if collision == null or collision.shape == null:
+		_fail("IslandGroundShape CollisionShape3D has no shape")
+		return false
+	var terrain_shape := collision.shape as ConcavePolygonShape3D
+	if terrain_shape == null or terrain_shape.get_faces().size() < 3000:
+		_fail("concave terrain collision has too few triangle faces")
+		return false
+	print(
+		(
+			"TERRAIN_SELFTEST: collision body layer=%d face_count=%d"
+			% [ground.collision_layer, terrain_shape.get_faces().size() / 3]
+		)
+	)
 	var space := get_world_3d().direct_space_state
 	for item in checks:
 		var x := float(item["x"])

@@ -89,9 +89,7 @@ func _create_atmosphere() -> void:
 	environment.fog_light_color = SKY_HORIZON
 	environment.fog_density = 0.0011
 	environment.fog_aerial_perspective = 0.22
-	environment.fog_depth_begin = 100.0
-	environment.fog_depth_end = 900.0
-	environment.fog_depth_curve = 1.15
+	environment.fog_sky_affect = 0.85
 
 	var world := WorldEnvironment.new()
 	world.name = "WorldEnvironment"
@@ -233,7 +231,7 @@ func _create_island() -> void:
 	_ground_body.collision_layer = 1
 	_ground_body.collision_mask = 1
 	var concave := ConcavePolygonShape3D.new()
-	concave.backface_collision = false
+	concave.backface_collision = true
 	concave.set_faces(faces)
 	var collision := CollisionShape3D.new()
 	collision.name = "IslandGroundShape"
