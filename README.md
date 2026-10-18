@@ -1,4 +1,4 @@
-# Free Fire Style FPS — Godot 4.2 (PC + Android)
+# Indus : Battle Royale — Godot 4.2 (PC + Android)
 
 Ek chhota par **pura 3D First-Person Shooter**, jo PC (WASD + mouse) aur Android
 (touch joystick + swipe) dono pe chalta hai.
@@ -10,6 +10,33 @@ unhe `.glb` me badalta hai. Koi model na mile (ya folder hi na ho) to game
 build ya game kabhi is wajah se nahi rukta.
 
 APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki zaroorat nahi.
+
+## Game launch flow (UI)
+
+```
+splash.tscn  ->  loading.tscn  ->  home.tscn  ->  main.tscn
+(logo+PRESENTS)  (progress bar)   (BATTLE)      (asli game)
+```
+
+| Screen | File | Kya hota hai |
+|---|---|---|
+| **Splash** | `scenes/splash.tscn` + `scripts/splash.gd` | Kaala background, logo (`res://icon.svg`, 300x300) + "PRESENTS". 1s fade-in -> 1.5s hold -> 1s fade-out. Tap/key se skip. |
+| **Loading** | `scenes/loading.tscn` + `scripts/loading.gd` | Dark grey background, "LOADING..." + green progress bar (screen ki 60% width). `main.tscn` background thread me load hota hai. 100% pe 0.5s ruk kar home. |
+| **Home** | `scenes/home.tscn` + `scripts/home.gd` | Cinematic lobby: `assets/ui/home_bg.png` full-screen (cover), top-left logo, top-right coins/gems/settings/notifications, left me **MISSIONS / INVENTORY / WEAPONS** (dark blue + cyan), bottom-left **SOLO / SQUAD**, bottom-right bada gold **START BATTLE** -> game. |
+| **Game** | `scenes/main.tscn` | Pehle jaisa hi — arena, weapons, HUD, enemies. |
+
+Sab UI **code se** bana hai (Control/ColorRect/TextureRect/Label/Button/ProgressBar +
+containers). Koi external font/theme nahi — sirf do images load hoti hain:
+`assets/ui/home_bg.png` (home ka background) aur logo. Home ka logo pehle
+`assets/ui/home_logo.png` dhoondhta hai; file na mile to `icon.svg` + "INDUS" text
+lockup dikh jata hai. Background ya logo missing ho to procedural fallback — crash nahi.
+
+> **Apna art badalna hai?** `assets/ui/home_bg.png` (16:9) ko apni image se replace karo.
+> Logo ke liye `assets/ui/home_logo.png` (~250x100, transparent PNG) daal do — bas.
+
+> `res://icon.svg` hi launcher icon bhi hai (`export_presets.cfg` ->
+> `launcher_icons/main_192x192`). Naya logo chahiye? Bas wahi file replace kar do —
+> splash, home aur APK icon teeno apne aap badal jayenge.
 
 ---
 
@@ -123,13 +150,21 @@ APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki z
 project.godot                  # Project settings: naam, 1280x720, mobile renderer, input keys (WASD/jump/fire), landscape orientation
 export_presets.cfg             # Android export preset (naam "Android", arm64-v8a, APK, signed) — isi ko Actions use karta hai
 icon.svg                       # Launcher icon (hand-made SVG, koi download nahi)
+assets/ui/home_bg.png          # Home screen ka cinematic background (1672x941, 16:9)
+assets/ui/home_logo.png        # (optional) home ka logo — na ho to icon.svg + text lockup
 
-scenes/main.tscn               # Main scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
+scenes/splash.tscn             # Launch scene #1: logo + PRESENTS (1s in / 1.5s hold / 1s out)
+scenes/loading.tscn            # Launch scene #2: progress bar + threaded main.tscn load
+scenes/home.tscn               # Launch scene #3: home menu (BATTLE / GUNS / SETTINGS / coins)
+scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
 scenes/player.tscn             # Player body + head + camera (FOV 75) + gun model
 scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
 scenes/bullet.tscn             # Goli ka chhota glowing sphere
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
+scripts/splash.gd              # Splash ka UI + fade tween + loading.tscn pe transition
+scripts/loading.gd             # Threaded load (load_threaded_request/status) + progress bar + home.tscn
+scripts/home.gd                # Home lobby UI: bg image, logo, left menu, mode select, START BATTLE -> main.tscn
 scripts/main.gd                # Game manager: arena + buildings + nature + gaadiyaan banata hai, enemies/score/game over
 scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0 model (sirf data — yahan numbers badlo)
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
@@ -167,6 +202,12 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 
 | Kya chahiye | Kahan badlo |
 |---|---|
+| Game ka naam / icon / launch scene | `project.godot` → `application/config/name`, `config/icon`, `run/main_scene` |
+| Splash ki speed | `scripts/splash.gd` → `FADE_IN`, `HOLD`, `FADE_OUT` |
+| Loading screen kitni der | `scripts/loading.gd` → `MIN_SHOW`, `DONE_DELAY` |
+| Home ka background | `assets/ui/home_bg.png` replace karo (16:9 PNG) — code change nahi chahiye |
+| Home ka logo | `assets/ui/home_logo.png` daalo (~250x100); na ho to `icon.svg` fallback |
+| Home ke buttons / rang | `scripts/home.gd` → `GOLD`, `PANEL_BG`, `CHIP_BG`, `_panel_style()` |
 | Player speed / jump | `scripts/player.gd` → `move_speed`, `jump_velocity` |
 | Firing speed / damage | `scripts/player.gd` → `fire_cooldown`, `bullet_damage` |
 | Mouse / touch sensitivity | `scripts/player.gd` → `mouse_sensitivity`, `touch_sensitivity` |

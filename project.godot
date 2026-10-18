@@ -1,5 +1,5 @@
 ; Engine configuration file.
-; Godot 4.2 — "Free Fire style" chhota 3D FPS
+; Godot 4.2 — "Indus : Battle Royale" (chhota 3D FPS)
 ; PC (WASD + mouse) aur Android (touch controls) dono pe chalta hai.
 ; Poore game me koi external asset nahi hai — sab kuch code/procedural hai.
 
@@ -7,17 +7,19 @@ config_version=5
 
 [application]
 
-config/name="Free Fire Style FPS"
-config/description="Chhota 3D FPS game — PC (WASD + mouse) aur Android (touch joystick + swipe). Sab kuch procedural, koi asset nahi."
+config/name="Indus : Battle Royale"
+config/description="Indus : Battle Royale — chhota 3D FPS (PC: WASD + mouse, Android: touch joystick + swipe). UI flow: splash -> loading -> home -> game."
 config/version="1.1.0"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/splash.tscn"
 config/features=PackedStringArray("4.2", "Mobile")
-config/icon="res://icon.svg"
+config/icon="res://assets/ui/home_logo.png"
 boot_splash/bg_color=Color(0.04, 0.05, 0.07, 1)
 boot_splash/show_image=false
 
 [display]
 
+; UI flow (splash/loading/home) mobile landscape ke liye — canvas_items stretch se
+; poora UI 1280x720 ke hisaab se banta hai aur screen ke size pe scale hota hai.
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/handheld/orientation=0
