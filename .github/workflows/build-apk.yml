@@ -517,6 +517,22 @@ jobs:
           godot --headless --path . --export-release Android 2>&1 | tee -a "$DIAG"
           ls -lh build/ | tee -a "$DIAG" || true
 
+      - name: "9a) Verify APK package, version, and signature"
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk"
+          test -s "$APK"
+          SDK_PATH="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS_DIR="$(ls -d "$SDK_PATH"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+          AAPT="${BUILD_TOOLS_DIR}aapt"
+          APKSIGNER="${BUILD_TOOLS_DIR}apksigner"
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING" | grep -F "package: name='com.auragames.indus' versionCode='1' versionName='1.0.0'"
+          printf '%s\n' "$BADGING" | grep -F "application-label:'Indus : Battle Royale'"
+          "$APKSIGNER" verify --verbose "$APK"
+
       # GitHub ke run page pe asset summary (phone se dekhne me aasan)
       - name: "9b) Asset summary (run page pe)"
         if: always()
