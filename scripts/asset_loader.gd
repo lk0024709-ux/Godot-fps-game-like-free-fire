@@ -3,15 +3,13 @@ extends RefCounted
 ## AssetLoader — download kiye gaye CC0 models (Quaternius) runtime pe load karta hai.
 ##
 ## Ye file HYBRID asset system ka "loader" hissa hai:
-##   0. `assets/downloaded_obj/<category>/` me OBJ source models hote hain (weapons, nature,
-##      characters, vehicles) — build ke waqt tools/obj2glb.py unhe bhi .glb banata hai.
-##   1. `assets/downloaded/<category>/` me tumhare upload kiye FBX source models rehte hain.
-##      Us folder me `.gdignore` pada hai, isliye Godot unhe scan NAHI karta
-##      (Godot 4 FBX import nahi kar sakta — aur bade packs pe import atak jata hai).
-##   2. GitHub Actions build ke waqt `tools/fbx2glb.py` unhe `.glb` me convert karta hai
-##      aur `assets/models/<category>/` me daalta hai (kahin bhi manual kuch nahi karna padta).
-##   3. Godot sirf `assets/models/` ko import karta hai, aur ye script wahan se
-##      PackedScene load karta hai.
+##   0. `assets/downloaded_obj/<category>/` me Quaternius OBJ source models hote hain
+##      (weapons, nature, characters, vehicles, buildings); `tools/obj2glb.py` converts them.
+##   1. `assets/downloaded/<category>/` me optional FBX source models rehte hain. Us folder
+##      me `.gdignore` hai, isliye Godot unhe scan nahi karta; `tools/fbx2glb.py` converts them.
+##   2. `assets/models/<category>/` me runtime GLBs hain. These are checked in for fresh
+##      clones and regenerated/validated by CI before Godot imports the project.
+##   3. Godot imports `assets/models/`, aur ye script wahan se PackedScene load karta hai.
 ##   4. Agar kuch bhi na mile (folder khali, file delete, conversion fail) to chup-chaap
 ##      `null` deta hai -> scripts/assets.gd ka procedural fallback chalta hai.
 ##
@@ -25,11 +23,10 @@ extends RefCounted
 ##
 
 ## Models kahan dhundhne hain (order matlab rakhta hai: pehla folder jeetta hai).
-## "assets/models/"       = CI ne banaye hue .glb (Godot-imported) — asli jagah.
-##                          FBX (assets/downloaded) aur OBJ (assets/downloaded_obj) dono
-##                          isi me convert hote hain (dekho tools/fbx2glb.py + tools/obj2glb.py).
+## "assets/models/"       = checked-in, Godot-imported .glb — runtime ka canonical source.
+##                          Quaternius OBJ source aur optional FBX source dono isi me convert hote hain.
 ## "assets/downloaded/"     = FBX source + `.gdignore` (Godot inhe scan nahi karta).
-## "assets/downloaded_obj/" = OBJ/MTL source (weapons + nature + characters + vehicles)
+## "assets/downloaded_obj/" = OBJ/MTL source (weapons + nature + characters + vehicles + buildings)
 ##                          + `.gdignore`. Yahan bhi agar koi khud .glb daal de to
 ##                          wo mil jayega — warna skip.
 const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/downloaded/",
@@ -42,7 +39,7 @@ const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/download
 const EXTENSIONS: Array[String] = [".glb", ".gltf", ".obj", ".fbx"]
 
 ## Saari categories
-const CATEGORIES: Array[String] = ["weapons", "nature", "characters", "vehicles"]
+const CATEGORIES: Array[String] = ["weapons", "nature", "characters", "vehicles", "buildings"]
 
 ## character files ke asli naam — male_1..male_8 / female_1..female_8 alias inhi pe jaate hain.
 ## Spec: **male_1 = Male_Suit** (game roster: Rey = male_1). Baaki files usi order me.
@@ -279,19 +276,25 @@ static func _scan(category: String) -> void:
 			if bare.is_empty() or bare.begins_with("."):
 				continue                    # .gdignore / .gitkeep / dot files
 
-			var full := folder.rstrip("/") + "/" + file_name
+			# Exported PCK me imported assets `Model.glb.remap` ke naam se list ho
+			# sakte hain. Resolve/load hamesha canonical `Model.glb` path se karo;
+			# `.remap` sidecar ko load karne ki koshish Android par fail ho sakti hai.
+			var resource_path := folder.rstrip("/") + "/" + clean
+			var listed_path := folder.rstrip("/") + "/" + file_name
 			# Sirf wahi file lo jo Godot sach me load kar sake. Godot 4 .fbx load NAHI
 			# karta (isliye build ke waqt .glb convert hota hai) — aise files yahan
 			# chup-chaap skip ho jati hain, aur game procedural fallback pe chalta hai.
-			if not ResourceLoader.exists(full):
+			if not ResourceLoader.exists(resource_path) and not ResourceLoader.exists(listed_path):
 				continue
+			# Keep the canonical source path even when the PCK lists a .remap sidecar;
+			# ResourceLoader resolves that remap when loading the original .glb path.
 
 			var key := bare.to_lower()
 			if seen.has(key):
 				continue                    # pehla folder jeeta (BASE_DIRS ka order)
 			seen[key] = true
 			names.append(bare)
-			paths[key] = full
+			paths[key] = resource_path
 
 	names.sort()                            # deterministic (PCK ka order badal sakta hai)
 	_names[category] = names

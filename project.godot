@@ -9,9 +9,9 @@ config_version=5
 
 config/name="Indus : Battle Royale"
 config/description="Indus : Battle Royale — chhota 3D FPS (PC: WASD + mouse, Android: touch joystick + swipe). UI flow: splash -> loading -> home -> game."
-config/version="1.1.0"
+config/version="1.0.0"
 run/main_scene="res://scenes/splash.tscn"
-config/features=PackedStringArray("4.2", "Mobile")
+config/features=PackedStringArray("4.2", "Mobile", "GL Compatibility")
 config/icon="res://assets/ui/home_logo.png"
 boot_splash/bg_color=Color(0.04, 0.05, 0.07, 1)
 boot_splash/show_image=false
@@ -66,6 +66,6 @@ pointing/emulate_touch_from_mouse=false
 
 [rendering]
 
-renderer/rendering_method="mobile"
-renderer/rendering_method.mobile="mobile"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true

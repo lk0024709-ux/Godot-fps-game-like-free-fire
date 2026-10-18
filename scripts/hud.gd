@@ -25,7 +25,6 @@ const DATA := preload("res://scripts/weapon_data.gd")
 @onready var health_bar: ProgressBar = $HealthBar
 @onready var health_label: Label = $HealthLabel
 @onready var score_label: Label = $ScoreLabel
-@onready var hint_label: Label = $HintLabel
 @onready var weapon_label: Label = $WeaponLabel
 @onready var ammo_label: Label = $AmmoLabel
 @onready var touch_controls: Control = $TouchControls
@@ -85,11 +84,6 @@ func _ready() -> void:
 	# Gun-picker: grid khud saare touch/click leta hai, panel bahar wala tap
 	weapon_grid.gui_input.connect(_on_weapon_grid_gui_input)
 	weapon_panel.gui_input.connect(_on_weapon_panel_gui_input)
-
-	# 8 second baad hint hata do
-	var tween := create_tween()
-	tween.tween_interval(8.0)
-	tween.tween_property(hint_label, "modulate:a", 0.0, 1.5)
 
 
 # ==================================================== weapon system se jodna ==
