@@ -18,6 +18,7 @@ extends Node3D
 
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const Assets := preload("res://scripts/assets.gd")
+const AssetLoader := preload("res://scripts/asset_loader.gd")
 const BUILDING := preload("res://scripts/building_builder.gd")
 
 @export_group("Enemy Spawning")
@@ -193,6 +194,9 @@ var _obstacles := [
 
 
 func _ready() -> void:
+	# Android/PCK asset diagnostics go to the engine log, never to the gameplay HUD.
+	for line in AssetLoader.report_lines():
+		print("ASSETS: " + line)
 	_build_arena()
 	_spawn_vehicles()
 
@@ -296,7 +300,8 @@ func _build_buildings() -> void:
 				push_warning("Buildings: %s (%s) ke liye jagah nahi mili -> skip"
 						% [kind, zone_name])
 				continue
-			var building: Node3D = BUILDING.build(kind)
+			var model_variant := int(kinds.get(kind, 0))
+			var building: Node3D = BUILDING.build(kind, model_variant)
 			if building == null:
 				continue
 			building.position = spot["pos"]

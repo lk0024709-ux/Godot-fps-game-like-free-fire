@@ -6,19 +6,18 @@ extends Control
 ##
 ## Screen pe kya hai:
 ##   * poori screen kaala background (ColorRect)
-##   * beech me logo (res://icon.svg, 300x300, aspect ratio bacha hua)
-##   * logo ke neeche "PRESENTS"
+##   * beech me premium logo (res://assets/ui/home_logo.png, 300x300, aspect ratio bacha hua)
+##   * logo ke neeche "AURA GAMES STUDIO PRESENTS"
 ##   * poora VBox fade-in (1s) -> 1.5s rukta hai -> fade-out (1s) -> loading.tscn
 ##
-## LOGO FAIL-SOFT: agar icon.svg import nahi hua / file hai hi nahi, to crash nahi —
-## ek procedural emblem (rounded panel + "IBR") dikh jata hai. Isliye CI me bhi kabhi
-## "missing resource" error nahi aata.
+## LOGO FAIL-SOFT: agar premium logo import nahi hua / file hai hi nahi, to crash nahi —
+## ek procedural emblem dikh jata hai. Isliye CI me bhi kabhi "missing resource" error nahi aata.
 ##
 ## Skip: mobile pe kahin bhi tap karo (ya PC pe koi bhi key/click) to seedha aage.
 ##
 
 const NEXT_SCENE := "res://scenes/loading.tscn"
-const LOGO_PATH := "res://icon.svg"
+const LOGO_PATH := "res://assets/ui/home_logo.png"
 
 ## Animation ke seconds (spec: 1s fade-in, 1.5s hold, 1s fade-out)
 const FADE_IN := 1.0
@@ -73,10 +72,10 @@ func _build_ui() -> void:
 
 	var presents := Label.new()
 	presents.name = "Presents"
-	presents.text = "PRESENTS"
+	presents.text = "AURA GAMES STUDIO PRESENTS"
 	presents.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	presents.add_theme_font_size_override("font_size", 24)
-	presents.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
+	presents.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 1.0))
 	_box.add_child(presents)
 
 
@@ -101,7 +100,7 @@ func _make_logo(size_px: int) -> Control:
 	return holder
 
 
-## icon.svg na mile to yahi dikhta hai (koi missing-resource error nahi).
+## Premium logo na mile to yahi dikhta hai (koi missing-resource error nahi).
 func _make_placeholder(size_px: int) -> Control:
 	var panel := PanelContainer.new()
 	panel.name = "LogoPlaceholder"
@@ -129,7 +128,7 @@ func _make_placeholder(size_px: int) -> Control:
 	return panel
 
 
-## res://icon.svg -> Texture2D, ya null (file nahi / import nahi hua).
+## res://assets/ui/home_logo.png -> Texture2D, ya null (file nahi / import nahi hua).
 func _load_logo() -> Texture2D:
 	if not ResourceLoader.exists(LOGO_PATH):
 		return null

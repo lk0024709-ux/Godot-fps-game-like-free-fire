@@ -30,6 +30,9 @@ extends RefCounted
 ## milakar ~150 bodies — mobile ke liye theek hai (koi shadow-casting light nahi).
 ##
 
+const Loader := preload("res://scripts/asset_loader.gd")
+const Assets := preload("res://scripts/assets.gd")
+
 const WALL_T := 0.25              ## deewar ki motai (metres)
 const FLOOR_T := 0.30
 const CEIL_T := 0.22
@@ -65,6 +68,12 @@ const COLORS := {
 	"shop": [Color(0.70, 0.66, 0.56), Color(0.36, 0.34, 0.30), Color(0.46, 0.42, 0.36)],
 }
 
+## Real Quaternius CC0 barn exteriors. Existing walls/collision and interior furniture
+## retain the current footprint and walkable entrances.
+const MODEL_POOLS := {
+	"barn": ["SmallBarn", "Barn", "BigBarn"],
+}
+
 
 ## Building ka footprint (width, depth) — main.gd placement ke liye
 static func footprint(kind: String) -> Vector2:
@@ -74,7 +83,7 @@ static func footprint(kind: String) -> Vector2:
 
 ## Poori building banao. Node3D wapas (andar saare StaticBody3D pieces).
 ## Unknown kind / kuch bhi galat -> null (caller skip kar dega).
-static func build(kind: String) -> Node3D:
+static func build(kind: String, variant: int = 0) -> Node3D:
 	if not SIZES.has(kind):
 		return null
 	var size: Vector3 = SIZES[kind]
@@ -131,7 +140,66 @@ static func build(kind: String) -> Node3D:
 
 	_add_furniture(root, kind, w, h, d)
 
+	var pool: Array = MODEL_POOLS.get(kind, [])
+	if not pool.is_empty():
+		var model_name := str(pool[absi(variant) % pool.size()])
+		if _attach_downloaded_exterior(root, model_name, size):
+			root.set_meta("asset_model", model_name)
+
 	return root
+
+
+## Downloaded Quaternius shell ko visual banao; procedural wall meshes collision/interior
+## ke liye hidden rehte hain. Model na mile to procedural building normally dikhegi.
+static func _attach_downloaded_exterior(root: Node3D, model_name: String, target_size: Vector3) -> bool:
+	var scene := Loader.load_model(model_name, "buildings")
+	if scene == null:
+		return false
+	var instance := scene.instantiate()
+	if not (instance is Node3D):
+		instance.queue_free()
+		return false
+	var model := instance as Node3D
+	var bounds := Assets.visual_aabb(model)
+	if bounds.size == Vector3.ZERO:
+		model.queue_free()
+		return false
+
+	var model_scale := Vector3(
+		target_size.x / maxf(bounds.size.x, 0.001),
+		target_size.y / maxf(bounds.size.y, 0.001),
+		target_size.z / maxf(bounds.size.z, 0.001))
+	if model_scale.x <= 0.0 or model_scale.y <= 0.0 or model_scale.z <= 0.0:
+		model.queue_free()
+		return false
+
+	_hide_procedural_shell(root)
+	model.name = "QuaterniusExterior_" + model_name
+	model.scale = model_scale
+	model.position = Vector3(
+		-(bounds.position.x + bounds.size.x * 0.5) * model_scale.x,
+		-bounds.position.y * model_scale.y,
+		-(bounds.position.z + bounds.size.z * 0.5) * model_scale.z)
+	root.add_child(model)
+	return true
+
+
+## Keep the original wall collision and interior furniture, but hide only the box meshes
+## that would z-fight with the imported exterior.
+static func _hide_procedural_shell(root: Node3D) -> void:
+	for child in root.get_children():
+		if not (child is StaticBody3D):
+			continue
+		var part_name := String(child.name)
+		var is_shell := (
+				part_name in ["Floor", "Ceiling", "BackWall", "WallLeft", "WallRight"]
+				or part_name.begins_with("Front")
+				or part_name.begins_with("Back"))
+		if not is_shell:
+			continue
+		for part in child.get_children():
+			if part is MeshInstance3D:
+				(part as MeshInstance3D).visible = false
 
 
 # ------------------------------------------------------------------ walls ----

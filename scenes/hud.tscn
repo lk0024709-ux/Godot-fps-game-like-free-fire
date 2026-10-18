@@ -216,24 +216,6 @@ theme_override_font_sizes/font_size = 40
 text = "— / —"
 horizontal_alignment = 2
 
-[node name="HintLabel" type="Label" parent="."]
-layout_mode = 3
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -460.0
-offset_top = 92.0
-offset_right = 460.0
-offset_bottom = 122.0
-grow_horizontal = 2
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.9, 0.93, 1, 0.85)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
-theme_override_constants/outline_size = 5
-theme_override_font_sizes/font_size = 18
-text = "PC: WASD + Mouse + Click, Q/E = gun badlo, R = reload, G = gun list    |    Mobile: joystick + swipe + FIRE / RELOAD / SWAP / GUNS"
-horizontal_alignment = 1
-
 [node name="TouchControls" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 15

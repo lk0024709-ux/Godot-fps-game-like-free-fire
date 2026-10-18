@@ -70,8 +70,9 @@ func _run_phase_1_real_assets() -> void:
 		"nature": "res://assets/downloaded_obj/Nature",
 		"characters": "res://assets/downloaded_obj/Characters",
 		"vehicles": "res://assets/downloaded_obj/Vehicles",
+		"buildings": "res://assets/downloaded_obj/Buildings",
 	}
-	var expected := {"weapons": 40, "nature": 60, "characters": 16, "vehicles": 7}
+	var expected := {"weapons": 40, "nature": 66, "characters": 16, "vehicles": 7, "buildings": 3}
 	for category in expected:
 		if DirAccess.dir_exists_absolute(String(sources[category])):
 			var got := int(stats.get(category, 0))
@@ -208,6 +209,13 @@ func _run_phase_1_real_assets() -> void:
 	if any_downloaded and Loader.has_models("vehicles"):
 		_check(vehicle_missing.is_empty(), "7 vehicles ke models mile (missing: %s)" % str(vehicle_missing))
 
+	var building_missing: Array[String] = []
+	for nm in ["SmallBarn", "Barn", "BigBarn"]:
+		if Loader.find_path(nm, "buildings").is_empty():
+			building_missing.append(nm)
+	if any_downloaded and Loader.has_models("buildings"):
+		_check(building_missing.is_empty(), "Quaternius barn models mile (missing: %s)" % str(building_missing))
+
 	# tree pe CapsuleShape3D collision (spec: r = 0.5)
 	var tree_prop: Node3D = Assets.tree(1.0, 0)
 	if tree_prop != null:
@@ -236,6 +244,9 @@ func _run_phase_1_real_assets() -> void:
 		if building == null:
 			continue
 		add_child(building)
+		if kind == "barn" and Loader.load_model("SmallBarn", "buildings") != null:
+			_check(String(building.get_meta("asset_model", "")) == "SmallBarn",
+					"barn ka real Quaternius exterior load hua")
 		var solids := 0
 		var lights := 0
 		for child in building.get_children():

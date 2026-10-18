@@ -11,10 +11,6 @@ permissions:
 env:
   GODOT_VERSION: "4.2.2"
   GODOT_CHANNEL: "stable"
-  # CC0 nature assets (Kenney Nature Kit 2.1) — cache key + pinned commit
-  # (pinned SHA = wahi files hamesha, chahe upstream repo aage badh jaye)
-  NATURE_ASSET_VERSION: "kenney-nature-kit-2.1"
-  NATURE_ASSET_SHA: "45df48c4d45f8716216b1a9e22df0b69cd9f5932"
 
 jobs:
   build-apk:
@@ -150,128 +146,61 @@ jobs:
           godot --version 2>&1 | tee -a "$DIAG"
 
       # -------------------------------------------------------------- assets --
-      # Asset pipeline (chaar hisse, chaaron fail-soft):
-      #   7c) purane Kenney nature models (optional extra — net na ho to skip; Quaternius
-      #       models already repo me hain, ye sirf backup variety ke liye hain)
-      #   7d) WEAPONS: assets/downloaded_obj/Weapons ke OBJ+MTL -> GLB
-      #       (tools/obj2glb.py, pure python). Ye weapons ka asli source hai.
-      #   7d-b) BAaki sab: assets/downloaded ke FBX -> GLB (tools/fbx2glb.py).
-      #       Godot 4 na .fbx na .obj import kar sakta, isliye conversion build ke waqt hoti hai.
-      #       FBX step `--skip-existing` se chalta hai, isliye weapons ke GLB OBJ se hi bante hain.
-      #   7e) bane hue .glb ko check karo (tools/glbcheck.py)
-      # Kuch bhi fail ho to koi baat nahi: scripts/assets.gd ka procedural fallback
-      # chalta hai aur game PHIR BHI banta hai.
-      # NOTE: ye steps "Project import" se PEHLE hone zaroori hain — import ke waqt hi
-      # Godot in .glb files ko padhta hai.
-      # NOTE: converted .glb ko cache karte hain (FBX source ab repo me hi hai).
-      # Cache miss ho to conversion chal jata hai — koi problem nahi, bas 3-4 second zyada.
+      # Asset pipeline:
+      #   7d) Required Quaternius OBJ+MTL for weapons, nature, characters, vehicles, buildings.
+      #       Conversion and per-category model counts are strict; missing assets fail CI.
+      #   7d-b) Optional FBX conversion (fail-soft) via tools/fbx2glb.py.
+      #   7e) GLB structure validation is strict (tools/glbcheck.py).
+      # The tracked assets/models/*.glb files let local clones load real assets immediately.
+      # These steps run before Project import so Godot can import the generated GLBs.
       - name: "7b) Cache: converted models"
         uses: actions/cache@v4
         with:
           path: assets/models
           # Key me dono source folders ka hash hai -> naya model aane pe naya cache
-          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx') }}-${{ hashFiles('assets/downloaded_obj/**/*.obj') }}
-
-      - name: "7c) Download CC0 nature assets (fail-soft)"
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          touch "$DIAG"
-          cd "$GITHUB_WORKSPACE"
-
-          # NOTE: assets/downloaded/ me .gdignore hai, isliye download seedha
-          # assets/models/nature me jata hai (wahi folder Godot import karta hai)
-          DEST="assets/models/nature"
-          mkdir -p "$DEST"
-          # "GLTF format" me space hai -> %20
-          BASE="https://raw.githubusercontent.com/ETdoFresh/kenney.nl/${NATURE_ASSET_SHA}/kenney_natureKit_2.1/Models/GLTF%20format"
-
-          # Ye 14 files (~145 KB total) scripts/assets.gd ke NATURE_MODELS se match karti hain
-          FILES=(
-            tree_default.glb tree_detailed.glb tree_pineTallA.glb tree_pineRoundC.glb tree_fat.glb
-            rock_largeA.glb rock_largeC.glb rock_smallB.glb rock_smallFlatA.glb
-            plant_bushDetailed.glb plant_bush.glb plant_bushSmall.glb
-            grass.glb grass_large.glb
-          )
-
-          # Poora download 150 second me nipat jaye (workflow ka 10 min budget bachane ke liye)
-          DEADLINE=$(( $(date +%s) + 45 ))
-          for f in "${FILES[@]}"; do
-            if [ -s "$DEST/$f" ]; then
-              continue                                  # cache se mil gaya
-            fi
-            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
-              echo "::warning::time budget khatam -> baaki models skip (procedural fallback chalega)" | tee -a "$DIAG"
-              break
-            fi
-            if curl -sSL --retry 3 --retry-delay 3 --max-time 120 -o "$DEST/$f" "$BASE/$f"; then
-              :
-            else
-              echo "::warning::download fail: $f" | tee -a "$DIAG"
-            fi
-          done
-
-          # Asli GLB hai? (LFS pointer / HTML error page / adhoori file hata do)
-          for f in "$DEST"/*.glb; do
-            [ -e "$f" ] || continue
-            if ! head -c 4 "$f" | grep -q "glTF"; then
-              echo "::warning::$(basename "$f") asli GLB nahi hai -> hata diya" | tee -a "$DIAG"
-              rm -f "$f" "$f.import"
-            fi
-          done
-
-          COUNT=$(ls -1 "$DEST"/*.glb 2>/dev/null | wc -l)
-          echo "nature models ready: $COUNT" | tee -a "$DIAG"
-          du -sh "$DEST" 2>/dev/null | tee -a "$DIAG" || true
-
-          # Kam se kam 5 chahiye — warna warning (build fail NAHI hota)
-          if [ "$COUNT" -lt 5 ]; then
-            echo "::warning::sirf $COUNT model mile (5 se kam) -> procedural fallback use hoga, build chalta rahega" | tee -a "$DIAG"
-          fi
+          key: cc0-glb-${{ hashFiles('assets/downloaded/**/*.fbx', 'assets/downloaded_obj/**/*.obj', 'assets/downloaded_obj/**/*.mtl', 'tools/obj2glb.py', 'tools/fbx2glb.py') }}
 
       # ---- 7d) OBJ -> GLB conversion (saare OBJ packs ka asli source) ----
-      # assets/downloaded_obj/{Weapons,Nature,Characters,Vehicles}/*.obj + *.mtl
-      #   -> assets/models/{weapons,nature,characters,vehicles}/*.glb
+      # assets/downloaded_obj/{Weapons,Nature,Characters,Vehicles,Buildings}/*.obj + *.mtl
+      #   -> assets/models/{weapons,nature,characters,vehicles,buildings}/*.glb
       # (Godot 4 .obj import nahi karta, isliye build ke waqt convert hota hai.
       #  Har folder ka mode alag hai: weapons ka barrel -Z, baaki Y-up — dekho tools/obj2glb.py)
-      - name: "7d) OBJ -> GLB conversion (weapons + nature + characters + vehicles)"
-        continue-on-error: true
+      - name: "7d) OBJ -> GLB conversion (weapons + nature + characters + vehicles + buildings)"
         run: |
-          set -uo pipefail
+          set -euo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
 
           mkdir -p build
           OUT="assets/models"
           OBJ_COUNT=$(find assets/downloaded_obj -name '*.obj' 2>/dev/null | wc -l)
-          echo "repo me OBJ weapons: $OBJ_COUNT" | tee -a "$DIAG"
-          if [ "$OBJ_COUNT" -eq 0 ]; then
-            echo "::warning::koi .obj nahi mila -> weapons FBX pack se ya procedural banenge" | tee -a "$DIAG"
-            exit 0
-          fi
-
-          # .mtl (material/colour) saath hona chahiye — dono check karte hain
           MTL_COUNT=$(find assets/downloaded_obj -name '*.mtl' 2>/dev/null | wc -l)
-          echo ".mtl files: $MTL_COUNT" | tee -a "$DIAG"
-          if [ "$MTL_COUNT" -lt "$OBJ_COUNT" ]; then
-            echo "::warning::kuch .obj ke paas .mtl nahi hai -> unka rang default (grey) rahega" | tee -a "$DIAG"
+          echo "Quaternius OBJ sources: $OBJ_COUNT | matching MTL files: $MTL_COUNT" | tee -a "$DIAG"
+          if [ "$OBJ_COUNT" -lt 132 ] || [ "$MTL_COUNT" -ne "$OBJ_COUNT" ]; then
+            echo "::error::expected at least 132 OBJ + matching MTL sources; refusing to build a procedural-only APK"
+            exit 1
           fi
 
+          # Conversion is a required build step: a missing/invalid model must fail CI,
+          # rather than silently shipping procedural weapon and map fallbacks.
           python3 tools/obj2glb.py assets/downloaded_obj --out-root "$OUT" \
-            --report build/obj-report.json 2>&1 | tee -a "$DIAG" || \
-            echo "::warning::OBJ conversion me kuch fail hua (jo ban gaya wahi use hoga)" | tee -a "$DIAG"
+            --report build/obj-report.json 2>&1 | tee -a "$DIAG"
 
-          for CAT in weapons nature characters vehicles; do
+          declare -A EXPECTED=( [weapons]=40 [nature]=66 [characters]=16 [vehicles]=7 [buildings]=3 )
+          for CAT in weapons nature characters vehicles buildings; do
             CAT_COUNT=$(find "$OUT/$CAT" -name '*.glb' 2>/dev/null | wc -l)
-            echo "  $CAT: $CAT_COUNT glb" | tee -a "$DIAG"
+            echo "  $CAT: $CAT_COUNT glb (expected at least ${EXPECTED[$CAT]})" | tee -a "$DIAG"
+            if [ "$CAT_COUNT" -lt "${EXPECTED[$CAT]}" ]; then
+              echo "::error::OBJ conversion incomplete for $CAT ($CAT_COUNT < ${EXPECTED[$CAT]})"
+              exit 1
+            fi
           done
-          GLB_COUNT=$(find "$OUT/weapons" -name '*.glb' 2>/dev/null | wc -l)
-          if [ "$GLB_COUNT" -eq 0 ]; then
-            echo "::warning::ek bhi weapon glb nahi bana -> procedural fallback chalega" | tee -a "$DIAG"
-          fi
-          NATURE_GLB=$(find "$OUT/nature" -name '*.glb' 2>/dev/null | wc -l)
-          if [ "$NATURE_GLB" -eq 0 ]; then
-            echo "::warning::koi nature glb nahi bana -> procedural ped/patthar chalenge" | tee -a "$DIAG"
+
+          GLB_COUNT=$(find "$OUT" -name '*.glb' 2>/dev/null | wc -l)
+          echo "Converted GLB total: $GLB_COUNT" | tee -a "$DIAG"
+          if [ "$GLB_COUNT" -lt "$OBJ_COUNT" ]; then
+            echo "::error::only $GLB_COUNT of $OBJ_COUNT OBJ models produced a GLB"
+            exit 1
           fi
 
           # Raw OBJ/MTL build workspace se hata do (repo me safe hain):
@@ -296,7 +225,7 @@ jobs:
           FBX_COUNT=$(find assets/downloaded -name '*.fbx' 2>/dev/null | wc -l)
           echo "repo me FBX files: $FBX_COUNT" | tee -a "$DIAG"
           if [ "$FBX_COUNT" -eq 0 ]; then
-            echo "::warning::koi .fbx nahi mila -> poora game procedural models pe chalega" | tee -a "$DIAG"
+            echo "::notice::koi optional .fbx nahi mila; required Quaternius OBJ models are already available" | tee -a "$DIAG"
             exit 0
           fi
 
@@ -324,13 +253,11 @@ jobs:
 
       # ---- 7e) .glb sanity check (header/accessors/index range) ----
       - name: "7e) GLB sanity check"
-        continue-on-error: true
         run: |
-          set -uo pipefail
+          set -euo pipefail
           touch "$DIAG"
           cd "$GITHUB_WORKSPACE"
-          python3 tools/glbcheck.py assets/models 2>&1 | tee -a "$DIAG" || \
-            echo "::warning::kuch glb theek nahi hai (convert dobara chalega agli baar)" | tee -a "$DIAG"
+          python3 tools/glbcheck.py assets/models 2>&1 | tee -a "$DIAG"
 
       - name: "8) Project import (headless)"
         run: |
@@ -599,27 +526,22 @@ jobs:
             echo ""
             echo '| folder | files | size |'
             echo '|---|---|---|'
-            for d in weapons nature characters vehicles; do
+            for d in weapons nature characters vehicles buildings; do
               f=$(find "assets/models/$d" -name '*.glb' 2>/dev/null | wc -l)
               s=$(du -sh "assets/models/$d" 2>/dev/null | cut -f1)
               echo "| $d | $f glb | ${s:-0} |"
             done
             echo ""
-            echo "FBX -> GLB converter: tools/fbx2glb.py | checker: tools/glbcheck.py"
+            echo "OBJ -> GLB: tools/obj2glb.py | optional FBX -> GLB: tools/fbx2glb.py | checker: tools/glbcheck.py"
           } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: "10) APK ka naam pakka karo"
         run: |
           set -euo pipefail
           touch "$DIAG"
-          APK=""
-          if [ -f "$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk" ]; then
-            APK="$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk"
-          else
-            APK=$(find "$GITHUB_WORKSPACE" -name '*.apk' -not -path '*/android/*' -not -path '*/.git/*' | head -n 1 || true)
-          fi
-          if [ -z "$APK" ]; then
-            echo "::error::APK nahi bana — step 9 ka output dekho"
+          APK="$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk"
+          if [ ! -s "$APK" ]; then
+            echo "::error::expected build/Indus_Battle_Royal.apk; export step produced no final APK"
             exit 1
           fi
           cp "$APK" "$GITHUB_WORKSPACE/Indus_Battle_Royal.apk"

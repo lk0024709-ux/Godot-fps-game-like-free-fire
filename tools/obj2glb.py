@@ -18,6 +18,7 @@ Four modes (auto-detected from the source folder name)
     nature/     -> "prop":   Y-up as authored, real metres kept (trees 4-8 m)
     characters/ -> "character": Y-up, rotated 180 deg so the face is -Z, real metres
     vehicles/   -> "vehicle": Y-up, rotated 180 deg so headlights are -Z, real metres
+    buildings/  -> "prop": Y-up as authored, real metres kept
 
 Characters in this pack look towards +Z (measured from the Eyes material vertices) and
 the cars look towards +Z too (Headlights material), while the game wants -Z forward
@@ -175,6 +176,7 @@ MODE_BY_FOLDER = {
     "nature": "prop",
     "characters": "character",
     "vehicles": "vehicle",
+    "buildings": "prop",
 }
 
 
