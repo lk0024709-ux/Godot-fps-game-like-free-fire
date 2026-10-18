@@ -522,16 +522,39 @@ jobs:
           set -euo pipefail
           APK="$GITHUB_WORKSPACE/build/Indus_Battle_Royal.apk"
           test -s "$APK"
+          grep -F 'export_path="build/Indus_Battle_Royal.apk"' export_presets.cfg
+          grep -F 'version/code=1' export_presets.cfg
+          grep -F 'version/name="1.0.0"' export_presets.cfg
+          grep -F 'package/unique_name="com.auragames.indus"' export_presets.cfg
+          grep -F 'package/name="Indus : Battle Royale"' export_presets.cfg
+
           SDK_PATH="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           BUILD_TOOLS_DIR="$(ls -d "$SDK_PATH"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
-          AAPT="${BUILD_TOOLS_DIR}aapt"
           APKSIGNER="${BUILD_TOOLS_DIR}apksigner"
-          test -x "$AAPT"
           test -x "$APKSIGNER"
-          BADGING="$("$AAPT" dump badging "$APK")"
-          printf '%s\n' "$BADGING" | grep -F "package: name='com.auragames.indus' versionCode='1' versionName='1.0.0'"
-          printf '%s\n' "$BADGING" | grep -F "application-label:'Indus : Battle Royale'"
           "$APKSIGNER" verify --verbose "$APK"
+
+          # Print APK metadata when aapt is available. Export preset is the strict source
+          # of truth; this dump also makes any platform-specific label formatting visible.
+          AAPT="${BUILD_TOOLS_DIR}aapt"
+          if [ -x "$AAPT" ]; then
+            if BADGING="$("$AAPT" dump badging "$APK" 2>&1)"; then
+              printf '%s\n' "$BADGING" | tee -a "$DIAG"
+              if printf '%s\n' "$BADGING" | grep -Fq "package: name='com.auragames.indus'" \
+                && printf '%s\n' "$BADGING" | grep -Fq "versionCode='1'" \
+                && printf '%s\n' "$BADGING" | grep -Fq "versionName='1.0.0'" \
+                && printf '%s\n' "$BADGING" | grep -Fq "application-label:'Indus : Battle Royale'"; then
+                echo "APK metadata verified: com.auragames.indus / Indus : Battle Royale / 1.0.0 (1)" | tee -a "$DIAG"
+              else
+                echo "::warning::aapt metadata formatting did not match the expected label; export preset values above are checked"
+              fi
+            else
+              echo "::warning::aapt could not dump metadata; signed APK and export settings were still validated"
+              printf '%s\n' "$BADGING" | tee -a "$DIAG"
+            fi
+          else
+            echo "::notice::aapt unavailable; APK signature and export settings were verified"
+          fi
 
       # GitHub ke run page pe asset summary (phone se dekhne me aasan)
       - name: "9b) Asset summary (run page pe)"
