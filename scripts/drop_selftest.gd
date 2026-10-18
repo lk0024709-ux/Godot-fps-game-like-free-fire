@@ -42,8 +42,9 @@ func _ready() -> void:
 		_finish()
 		return
 	_check(_player.is_dropping(), "match sky-dive se shuru hota hai (zameen pe nahi)")
-	_check(_player.global_position.y > 250.0,
-			"player 300m ke aas-paas spawn hua (y=%.1f)" % _player.global_position.y)
+	# NOTE: y-position ka check phase 1 me hota hai — main._physics_process pehle
+	# physics frame me player ko plane ke seat pe bithata hai; _ready ke waqt wo
+	# abhi scene ka default (y=0.1) hota hai.
 	_check(_main.sun != null and not _main.sun.shadow_enabled,
 			"drop ke dauran sun shadows band hain (4GB perf)")
 	_check(_main.hud != null and _main.hud.drop_panel.visible,
