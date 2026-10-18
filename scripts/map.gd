@@ -7,18 +7,33 @@ extends Node3D
 ## weapons, buildings, or vehicles. The deterministic height function is shared by
 ## the mesh, collision, and terrain smoke test.
 ##
+## SCALE: the island is 2000m across (ISLAND_RADIUS 1000m) in a 4000m ocean.
+## The height/colour design below was authored against a 400m-radius reference
+## island (REFERENCE_RADIUS); _height_at()/_color_at() divide incoming world
+## coordinates by WORLD_SCALE, so every design distance inside them (plateau
+## 120m, ramps, ridge band, beach...) is in reference metres and appears in the
+## world multiplied by WORLD_SCALE. Heights are NOT scaled — slopes simply get
+## gentler. Change ISLAND_RADIUS alone to resize the whole island.
+##
 
-const ISLAND_RADIUS := 400.0
+const MapData := preload("res://scripts/map_data.gd")
+
+## This scene is the "Neel Dweep" island (display name lives in map_data.gd).
+const MAP_ID := "neel_dweep"
+const ISLAND_RADIUS := 1000.0
+const REFERENCE_RADIUS := 400.0
+const WORLD_SCALE := ISLAND_RADIUS / REFERENCE_RADIUS  # 2.5
 const RADIAL_STEP := 5.0
 const ANGULAR_SEGMENTS := 320
-const OCEAN_SIZE := 2000.0
+const OCEAN_SIZE := 4000.0
 const OCEAN_Y := -0.5
+# Design distances below are reference-metres (see header): world = value * WORLD_SCALE.
 const PLATEAU_RADIUS := 120.0
 const PLATEAU_HEIGHT := 15.0
 const RAMP_END_RADIUS := 230.0
 const RAMP_FADE_RADIUS := 310.0
 const VALLEY_DEPTH := 14.0
-const NEAR_SHADOW_RADIUS := 240.0
+const NEAR_SHADOW_RADIUS := 600.0  # world metres (used on real mesh centroids)
 const SKY_TOP := Color(0.20, 0.40, 0.76)
 const SKY_HORIZON := Color(0.63, 0.77, 0.91)
 const GRASS := Color(0.20, 0.39, 0.16)
@@ -38,8 +53,8 @@ func _ready() -> void:
 	_create_clouds()
 	print(
 		(
-			"ISLAND: radius %.0fm, plateau %.0fm @ %.0fm, collision ready"
-			% [ISLAND_RADIUS, PLATEAU_RADIUS, PLATEAU_HEIGHT]
+			"ISLAND: %s — radius %.0fm, plateau %.0fm @ %.0fm, collision ready"
+			% [MapData.display_name(MAP_ID), ISLAND_RADIUS, PLATEAU_RADIUS * WORLD_SCALE, PLATEAU_HEIGHT]
 		)
 	)
 
@@ -87,7 +102,7 @@ func _create_atmosphere() -> void:
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
 	environment.fog_enabled = true
 	environment.fog_light_color = SKY_HORIZON
-	environment.fog_density = 0.0011
+	environment.fog_density = 0.001
 	environment.fog_aerial_perspective = 0.22
 	environment.fog_sky_affect = 0.85
 
@@ -120,7 +135,7 @@ func _create_ocean() -> void:
 	plane.material = water_material
 
 	var water := MeshInstance3D.new()
-	water.name = "Ocean_2000m"
+	water.name = "Ocean_4000m"
 	water.mesh = plane
 	water.position.y = OCEAN_Y
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -260,6 +275,9 @@ func _mesh_from_arrays(
 
 
 func _height_at(x: float, z: float) -> float:
+	# Design space: all distances below are reference-metres (400m island).
+	x /= WORLD_SCALE
+	z /= WORLD_SCALE
 	var radius := Vector2(x, z).length()
 	var broad_noise := _height_noise.get_noise_2d(x, z)
 	var detail := _detail_noise.get_noise_2d(x, z)
@@ -306,11 +324,14 @@ func _height_at(x: float, z: float) -> float:
 	if radius > 360.0:
 		height = lerpf(height, 0.5, smoothstep(360.0, 382.0, radius))
 	if radius > 380.0:
-		height = lerpf(height, -2.0, smoothstep(380.0, ISLAND_RADIUS, radius))
+		height = lerpf(height, -2.0, smoothstep(380.0, REFERENCE_RADIUS, radius))
 	return height
 
 
 func _color_at(x: float, z: float, height: float) -> Color:
+	# Same reference space as _height_at (see header).
+	x /= WORLD_SCALE
+	z /= WORLD_SCALE
 	var radius := Vector2(x, z).length()
 	var detail := _detail_noise.get_noise_2d(x, z)
 	var grass := GRASS.lerp(Color(0.30, 0.46, 0.19), 0.20 + detail * 0.11)
@@ -398,6 +419,14 @@ func _create_clouds() -> void:
 		Transform3D(Basis.from_scale(Vector3(43.0, 7.0, 21.0)), Vector3(-220.0, 220.0, 480.0)),
 		Transform3D(Basis.from_scale(Vector3(60.0, 8.0, 26.0)), Vector3(-520.0, 215.0, 70.0)),
 	]
+
+	# The bank above is authored around the 400m reference island; scale it
+	# (puff size and position) with the world so it stays offshore/high.
+	for i in cloud_transforms.size():
+		var t := cloud_transforms[i]
+		cloud_transforms[i] = Transform3D(
+			Basis.from_scale(t.basis.get_scale() * WORLD_SCALE), t.origin * WORLD_SCALE
+		)
 
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D

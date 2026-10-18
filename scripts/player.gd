@@ -35,6 +35,9 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var mouse_sensitivity: float = 0.0025
 @export var touch_sensitivity: float = 0.005
 @export var pitch_limit_deg: float = 85.0
+## Camera kitni door tak dekhega (Camera3D.far). Map 2000x2000m hai, isliye
+## 3000 rakha hai taaki ek kinare se doosra kinara + samundar dikhe.
+@export var camera_far: float = 3000.0
 
 @export_group("Body")
 @export var character_index: int = 0          ## kaunsa character (character_data.gd ka index)
@@ -74,6 +77,7 @@ var _is_mobile: bool = false
 func _ready() -> void:
 	add_to_group("player")
 	_setup_input()
+	camera.far = camera_far        # bada BR map: horizon door tak dikhe (player.tscn me bhi 3000)
 	health = max_health
 	_is_mobile = OS.has_feature("mobile")
 	_holder_base = weapon_holder.position
