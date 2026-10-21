@@ -150,6 +150,7 @@ jobs:
       #   7d) Required Quaternius OBJ+MTL for weapons, nature, characters, vehicles, buildings.
       #       Conversion and per-category model counts are strict; missing assets fail CI.
       #   7d-b) Optional FBX conversion (fail-soft) via tools/fbx2glb.py.
+      #   Sync Assets from Generator Repo: latest generated GLBs + optional textures.
       #   7e) GLB structure validation is strict (tools/glbcheck.py).
       # The tracked assets/models/*.glb files let local clones load real assets immediately.
       # These steps run before Project import so Godot can import the generated GLBs.
@@ -250,6 +251,62 @@ jobs:
           find assets/downloaded -name '*.fbx' -delete
           find assets/downloaded -name '*.fbx.import' -delete
           echo "FBX build workspace se hata diye (repo me safe hain)" | tee -a "$DIAG"
+
+      # Sync after the cache/converters so they cannot overwrite generator assets.
+      # assets/models/ is AssetLoader.BASE_DIRS' canonical runtime path; unlike
+      # assets/downloaded/, it has no .gdignore and is included by all_resources.
+      - name: "Sync Assets from Generator Repo"
+        shell: bash
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          ASSET_REPO="$(mktemp -d "$RUNNER_TEMP/indus-assets.XXXXXX")"
+          trap 'rm -rf "$ASSET_REPO"' EXIT
+          git clone --depth 1 --branch main --single-branch \
+            https://github.com/lk0024709-ux/indus-assets-gen.git "$ASSET_REPO" 2>&1 | tee -a "$DIAG"
+          ASSET_COMMIT="$(git -C "$ASSET_REPO" rev-parse HEAD)"
+          SOURCE="$ASSET_REPO/docs/models"
+          if [ ! -d "$SOURCE" ]; then
+            echo "::error::Generator repo is missing docs/models/" | tee -a "$DIAG"
+            exit 1
+          fi
+          MODEL_COUNT=$(find "$SOURCE" -type f \( -iname '*.glb' -o -iname '*.gltf' \) | wc -l)
+          if [ "$MODEL_COUNT" -eq 0 ]; then
+            echo "::error::No generated GLB/GLTF models found in docs/models/" | tee -a "$DIAG"
+            exit 1
+          fi
+
+          mkdir -p assets/models
+          # Copy the directory contents, including nested folders and glTF sidecars.
+          cp -a "$SOURCE/." assets/models/
+          TEXTURE_COUNT=0
+          if [ -d "$ASSET_REPO/docs/textures" ]; then
+            mkdir -p assets/textures
+            cp -a "$ASSET_REPO/docs/textures/." assets/textures/
+            TEXTURE_COUNT=$(find "$ASSET_REPO/docs/textures" -type f | wc -l)
+          fi
+
+          # .gitignore only affects Git tracking, NOT Godot import. A .gdignore,
+          # however, would hide these files from Godot: fail instead of shipping it.
+          if [ -f .gdignore ] || [ -f assets/.gdignore ] || \
+            [ -n "$(find assets/models assets/textures -name .gdignore -print -quit 2>/dev/null || true)" ]; then
+            echo "::error::.gdignore blocks synced assets; remove it before Godot import" | tee -a "$DIAG"
+            exit 1
+          fi
+
+          echo "Generator commit: $ASSET_COMMIT" | tee -a "$DIAG"
+          echo "Synced $MODEL_COUNT generated models -> res://assets/models/" | tee -a "$DIAG"
+          echo "Synced $TEXTURE_COUNT texture files -> res://assets/textures/" | tee -a "$DIAG"
+          {
+            echo "## Generator asset sync"
+            echo ""
+            echo "Source: [indus-assets-gen@$ASSET_COMMIT](https://github.com/lk0024709-ux/indus-assets-gen/commit/$ASSET_COMMIT)"
+            echo ""
+            echo "Models: **$MODEL_COUNT** → res://assets/models/"
+            echo "Textures: **$TEXTURE_COUNT** → res://assets/textures/ (optional)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ---- 7e) .glb sanity check (header/accessors/index range) ----
       - name: "7e) GLB sanity check"

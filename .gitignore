@@ -50,6 +50,10 @@ assets/downloaded_obj/**/*.glb
 assets/downloaded_obj/**/*.gltf
 assets/downloaded_obj/**/*.obj.import
 
+# indus-assets-gen sync writes to assets/models/ and assets/textures/ during CI.
+# Neither destination is ignored here. Git ignore rules only affect tracking;
+# Godot imports build-time files too. Do NOT put .gdignore in these destinations.
+
 # Build ke waqt bane reports
 build/glb-report.json
 
