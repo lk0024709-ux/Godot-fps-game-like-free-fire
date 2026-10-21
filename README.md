@@ -298,6 +298,32 @@ Game me models **3 layer** se aate hain — upar wala mile to wahi, warna neeche
 > pack me `.glb` ki jagah Godot `.tscn` files (Git-LFS pe) thi. Ab Quaternius ke FBX repo me
 > pade hain, isliye download ki zaroorat nahi — Kenney sirf backup ke liye reh gaya hai.
 
+## 5c. Generator repo se automatic asset sync
+
+Har APK build me **Sync Assets from Generator Repo** step
+[`indus-assets-gen`](https://github.com/lk0024709-ux/indus-assets-gen) ki `main`
+branch ko temporary runner folder me shallow-clone karta hai. Manual download/upload
+ki zaroorat nahi:
+
+| Generator source | Godot destination |
+|---|---|
+| `docs/models/` (poora folder, subfolders aur glTF sidecars ke saath) | `res://assets/models/` |
+| `docs/textures/` (agar present ho) | `res://assets/textures/` |
+
+`assets/models/` hi `scripts/asset_loader.gd` ka canonical runtime search path hai.
+Sync **cache restore aur OBJ/FBX conversion ke baad**, lekin **GLB validation,
+Godot project import, selftests aur APK export se pehle** hota hai. Isliye purana
+cache generator ki latest files ko overwrite nahi karega. Existing Quaternius
+models bhi apni jagah rehte hain; generated files har build pe fresh copy hote hain
+(inko game repo me commit karna zaroori nahi).
+
+Clone fail ho, `docs/models/` missing/empty ho, ya destination me `.gdignore` ho,
+to build clear error ke saath fail hota hai. `.gitignore` Git tracking ke liye hai,
+Godot import ko block nahi karta; destination folders me **`.gdignore` mat daalna**.
+Build log aur Actions summary me exact generator commit aur copied model/texture
+counts milenge. Generator update lene ke liye game ka APK workflow dobara run karo;
+generator repo pe push akela is game workflow ko trigger nahi karta.
+
 ## 6. Kuch galat ho to (troubleshooting)
 
 | Problem | Kya karo |
