@@ -1,6 +1,9 @@
 extends Node3D
 ##
 ## Main (game manager) — map: "Veergarh" (naam scripts/map_data.gd me hai)
+## - BATTLE ROYALE DROP: match 300m upar plane me shuru — JUMP OUT (ya 10s
+##   auto-eject) -> free-fall (steering) -> 50m pe parachute (5 m/s) -> land.
+##   Land karne ke baad hi dushman spawn hona shuru hote hain
 ## - Arena banata hai: 2000x2000m zameen + 4000x4000m samundar (Ocean) +
 ##   kinaron par deewar + center me purane cover boxes (sab code se)
 ## - ENTERABLE BUILDINGS banata hai (scripts/building_builder.gd): kuchh ghar, dukaan,
@@ -80,6 +83,17 @@ const GREEN_ZONES: Array[String] = ["Haveli", "Haritvan", "Khet", "Kanak"]
 ## NOTE: gaadi me baithna/chadhna (enter-exit physics) Phase F ka kaam hai —
 ## abhi ye sirf static decoration hai (takkar hoti hai, par chal nahi sakte).
 
+@export_group("Plane Drop")
+## BATTLE ROYALE START: player zameen pe spawn NAHI hota — 300m upar plane me
+## hota hai. Plane map ke paar udta hai; player JUMP OUT (ya 10s me auto-eject)
+## karta hai, free-fall me steering karta hai, 50m pe parachute khulta hai aur
+## land karke normal FPS gameplay shuru hota hai.
+@export var plane_drop_enabled: bool = true
+@export var plane_start: Vector3 = Vector3(-900.0, 300.0, 0.0)    ## plane kahan se udta hai (map ke andar — turant kudo to bhi zameen mile)
+@export var plane_direction: Vector3 = Vector3(1.0, 0.0, 0.0)     ## kis dish me (normal ize hota hai)
+@export var plane_speed: float = 70.0            ## plane ki raftaar (m/s)
+@export var auto_eject_time: float = 10.0        ## itne second me player khud bahar
+
 ## Neeche wala layout 40x40 ke hisaab se likha hai (positions/sizes) aur
 ## LAYOUT_SCALE se 52m ke center-layout me fit hota hai.
 const ARENA_REFERENCE: float = 40.0
@@ -100,9 +114,19 @@ const NATURE_CELL_SIZE: float = 250.0
 @onready var enemy_container: Node3D = $Enemies
 @onready var bullet_container: Node3D = $Bullets
 @onready var spawn_timer: Timer = $SpawnTimer
+@onready var sun: DirectionalLight3D = $Sun
 
 var score: int = 0
 var game_over: bool = false
+
+# ---- plane drop (BR start) ka state ----
+## Player plane ke andar seat pe is offset pe baithta hai (plane origin se upar).
+## Plane origin fuselage ke center pe hai; floor ka top -1.4m pe hai — wahi seat.
+const PLANE_SEAT_OFFSET := Vector3(0.0, -1.4, 0.0)
+var _plane: Node3D = null               ## procedural drop plane (boxes wala)
+var _plane_time: float = 0.0            ## plane udna shuru hue kitna time
+var _plane_active: bool = false
+var _ejected: bool = false
 
 # ---- map ke "book-keeping" (building/vehicle overlap na ho) ----
 ## Har building ka spot: {pos: Vector3, half: Vector2 (x/z half-size), radius: float}
@@ -244,15 +268,26 @@ func _ready() -> void:
 	player.health_changed.connect(hud.set_health)
 	player.died.connect(_on_player_died)
 
+	# plane drop -> HUD / player
+	player.parachute_opened.connect(_on_player_parachute_opened)
+	player.landed.connect(_on_player_landed)
+	hud.jump_out_pressed.connect(_eject_player)
+	hud.sprint_pressed.connect(_on_hud_sprint_pressed)
+	hud.sprint_released.connect(_on_hud_sprint_released)
+
 	# HP bar player ke max_health ke hisaab se (player.gd me max_health badlo to bar bhi sahi)
 	hud.set_max_health(player.max_health)
 	hud.set_health(player.health)
 	hud.set_score(score)
 
+	# Dushman spawn plane-drop ke BAAD shuru hote hain (land karne pe).
+	# Plane drop off ho to pehle jaisa seedha ground match.
 	spawn_timer.wait_time = spawn_interval
 	spawn_timer.timeout.connect(_on_spawn_timer_timeout)
-	spawn_timer.start()
-	_spawn_enemy()
+	if plane_drop_enabled:
+		_start_plane_drop()
+	else:
+		_start_ground_match()
 
 
 # ------------------------------------------------------------- arena banana --
@@ -306,8 +341,10 @@ func _build_arena() -> void:
 
 
 ## Samundar: zameen ke neeche ek bada flat plane (4000x4000m) — kinare se
-## horizon tak paani hi paani. Koi texture aur koi collision nahi (perf),
-## wahi material jo Neel Dweep (map.gd) ki ocean use karti hai.
+## horizon tak paani. Koi texture nahi (perf), wahi material jo Neel Dweep
+## (map.gd) ki ocean use karti hai. Saath me ek invisible catch-floor bhi —
+## agar koi plane se jaldi kud ke ya steering karte hue map ke bahar gire to
+## hamesha zameen mile (infinite fall nahi).
 func _build_ocean() -> void:
 	var water_material := StandardMaterial3D.new()
 	water_material.albedo_color = Color(0.035, 0.25, 0.43, 0.70)
@@ -326,6 +363,18 @@ func _build_ocean() -> void:
 	water.position.y = -0.5
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(water)
+
+	# ---- invisible catch-floor (paani ke thoda niche) ----
+	var catch_body := StaticBody3D.new()
+	catch_body.name = "OceanCatchFloor"
+	catch_body.collision_layer = 1
+	var catch_shape := CollisionShape3D.new()
+	var catch_box := BoxShape3D.new()
+	catch_box.size = Vector3(ocean_size, 1.0, ocean_size)
+	catch_shape.shape = catch_box
+	catch_shape.position = Vector3(0.0, -3.0, 0.0)
+	catch_body.add_child(catch_shape)
+	add_child(catch_body)
 
 
 # ------------------------------------------------------------- buildings ----
@@ -976,10 +1025,132 @@ void fragment() {
 	return material
 
 
+# ------------------------------------------------- plane drop (BR start) ----
+
+## Match shuru: player 300m upar plane me, plane map ke paar udta hai.
+func _start_plane_drop() -> void:
+	_plane = _build_drop_plane()
+	_plane.position = plane_start
+	_plane_time = 0.0
+	_plane_active = true
+	_ejected = false
+
+	# PERF (4GB): drop ke dauran shadow rendering band — 2000 pedo ki shadow
+	# mehngi hai aur itni unchaii se waise bhi koi nahi dekh raha.
+	# Landing pe wapas on hota hai (_on_player_landed dekho).
+	sun.shadow_enabled = false
+
+	player.begin_plane_drop()
+	hud.show_drop_ui()
+	hud.set_drop_countdown(auto_eject_time)
+	print("DROP: plane started at %s, auto-eject in %.0fs" % [plane_start, auto_eject_time])
+
+
+## Plane ke bina match (plane_drop_enabled = false) — pehle jaisa seedha shuru
+func _start_ground_match() -> void:
+	spawn_timer.start()
+	_spawn_enemy()
+
+
+func _physics_process(delta: float) -> void:
+	if not _plane_active or _plane == null or not is_instance_valid(_plane):
+		return
+
+	_plane_time += delta
+	_plane.position += plane_direction.normalized() * plane_speed * delta
+
+	if not _ejected:
+		# player har frame plane ke saath seat pe (upar-neeche nahi girta)
+		player.global_position = _plane.position + PLANE_SEAT_OFFSET
+		hud.set_drop_countdown(maxf(0.0, auto_eject_time - _plane_time))
+
+		# PC: Space = turant jump out (mobile: HUD ka JUMP OUT button)
+		if Input.is_action_just_pressed("jump"):
+			_eject_player()
+	elif _plane.position.length() > 3200.0 or _plane_time > 90.0:
+		_plane.queue_free()               # plane door nikal gaya — node free
+		_plane = null
+		_plane_active = false
+
+
+## JUMP OUT button / Space / auto-eject — sab yahan se
+func _eject_player() -> void:
+	if not _plane_active or _ejected:
+		return
+	if not player.is_in_plane():
+		return
+	_ejected = true
+	hud.hide_drop_ui()
+	player.eject_from_plane()
+	print("DROP: player ejected at %s" % player.global_position)
+
+
+## Sada low-poly plane: sirf 9 box (koi texture nahi, shadow off — 4GB perf).
+## Nose +X ki taraf hai, isliye plane_direction (1,0,0) ke saath seedha chalta hai.
+## Andar se dekho to fuselage diwarein backface-cull hoti hain (khuli darwaza
+## jaisa) — neeche ka poora 2km map dikhta hai, drop point chunne me aasan.
+func _build_drop_plane() -> Node3D:
+	var plane := Node3D.new()
+	plane.name = "DropPlane"
+
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = Color(0.85, 0.87, 0.90)
+	body_mat.roughness = 0.85
+	var dark_mat := StandardMaterial3D.new()
+	dark_mat.albedo_color = Color(0.16, 0.20, 0.28)
+	dark_mat.roughness = 0.95
+
+	_add_plane_box(plane, Vector3(0.0, 0.0, 0.0), Vector3(14.0, 3.4, 3.2), body_mat)      # fuselage
+	_add_plane_box(plane, Vector3(8.0, -0.4, 0.0), Vector3(2.4, 2.0, 2.2), body_mat)      # nose
+	_add_plane_box(plane, Vector3(6.0, 0.9, 0.0), Vector3(1.8, 0.9, 2.4), dark_mat)       # cockpit
+	_add_plane_box(plane, Vector3(0.0, -1.55, 0.0), Vector3(12.0, 0.3, 2.2), dark_mat)    # floor
+	_add_plane_box(plane, Vector3(-0.5, -1.1, 0.0), Vector3(4.5, 0.35, 20.0), body_mat)   # wing
+	_add_plane_box(plane, Vector3(-0.5, -1.7, 5.5), Vector3(2.6, 1.4, 1.4), dark_mat)     # engine L
+	_add_plane_box(plane, Vector3(-0.5, -1.7, -5.5), Vector3(2.6, 1.4, 1.4), dark_mat)    # engine R
+	_add_plane_box(plane, Vector3(-6.4, 1.8, 0.0), Vector3(2.0, 3.4, 0.35), body_mat)     # tail fin
+	_add_plane_box(plane, Vector3(-6.4, -0.2, 0.0), Vector3(1.6, 0.3, 6.5), body_mat)     # tail wing
+
+	add_child(plane)
+	return plane
+
+
+func _add_plane_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = mat
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.position = pos
+	# PERF: shadow cast band (300m upar shadow ka koi fayda nahi)
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+
+
+func _on_player_parachute_opened() -> void:
+	hud.show_toast("PARACHUTE DEPLOYED!")
+
+
+func _on_player_landed() -> void:
+	hud.show_toast("Landed!")
+	sun.shadow_enabled = true          # shadows wapas — ab ground fight shuru
+	if not game_over:
+		_start_ground_match()          # ab dushman spawn hona shuru
+
+
+func _on_hud_sprint_pressed() -> void:
+	player.set_sprint_requested(true)
+
+
+func _on_hud_sprint_released() -> void:
+	player.set_sprint_requested(false)
+
+
 # ------------------------------------------------------------- enemy spawn --
 
 func _on_spawn_timer_timeout() -> void:
 	if game_over:
+		return
+	if player.is_dropping():               # safety: abhi plane/chute phase me hain
 		return
 	if enemy_container.get_child_count() >= max_enemies:
 		return
