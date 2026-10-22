@@ -380,14 +380,9 @@ static func _build_aravalli_mountain(world_root: Node3D) -> Dictionary:
 	mountain.set_meta("real_glb", is_real)
 	world_root.add_child(mountain)
 
-	# Prefer dedicated vegetation-free concave collider mesh when synced alongside visual GLB
-	var cols := 0
-	var col_proxy := _instantiate_first(ARAVALLI_COLLISION_PATHS)
-	if col_proxy != null:
-		cols = _attach_collision_from_proxy(mountain, col_proxy)
-		col_proxy.free()
-	if cols == 0:
-		cols = ensure_trimesh_collision(mountain)
+	# Build exact 1:1 Trimesh StaticBody3D colliders directly on every visual mesh of AravalliMountain
+	# so visual terrain, boulders, and switchback road share identical world transforms.
+	var cols := ensure_trimesh_collision(mountain)
 	return {"real": is_real, "colliders": cols}
 
 
@@ -539,30 +534,6 @@ static func ensure_trimesh_collision(root: Node, collision_layer_bits: int = 1) 
 	return created
 
 
-static func _attach_collision_from_proxy(target: Node3D, proxy: Node) -> int:
-	var count := 0
-	var meshes: Array[MeshInstance3D] = []
-	_collect_meshes(proxy, meshes)
-	for mi in meshes:
-		if mi.mesh == null:
-			continue
-		var shape := _get_or_create_trimesh(mi.mesh)
-		if shape == null:
-			continue
-		var body := StaticBody3D.new()
-		body.name = "AravalliSwitchback_StaticBody3D"
-		body.collision_layer = 1
-		body.collision_mask = 1
-		body.transform = mi.transform
-		var col := CollisionShape3D.new()
-		col.name = "TrimeshCollisionShape3D"
-		col.shape = shape
-		body.add_child(col)
-		target.add_child(body)
-		count += 1
-	return count
-
-
 static func _get_or_create_trimesh(mesh: Mesh) -> ConcavePolygonShape3D:
 	var key := mesh.get_rid()
 	if _shape_cache.has(key):
@@ -579,13 +550,6 @@ static func _has_static_body_child(node: Node) -> bool:
 		if child is StaticBody3D:
 			return true
 	return false
-
-
-static func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
-	if node is MeshInstance3D:
-		out.append(node as MeshInstance3D)
-	for child in node.get_children():
-		_collect_meshes(child, out)
 
 
 # ===================================================== RESOURCE / MATERIAL ====

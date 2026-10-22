@@ -351,27 +351,35 @@ func _on_crouch_button_pressed() -> void:
 
 func bind_weapon_manager(wm) -> void:
 	_weapon_manager = wm
-	wm.weapon_switched.connect(_on_weapon_switched)
+	wm.weapon_changed.connect(_on_weapon_changed)
 	wm.ammo_changed.connect(_on_ammo_changed)
 	wm.reload_started.connect(_on_reload_started)
 	wm.reload_finished.connect(_on_reload_finished)
+	wm.index_changed.connect(_on_index_changed)
 
 	_build_weapon_menu()
 
 	var current: Dictionary = wm.get_current()
 	if not current.is_empty():
-		_on_weapon_switched(wm.current_index, current)
-		_on_ammo_changed(wm.get_ammo(), wm.get_mag_size())
+		_on_weapon_changed(String(current.get("name", "")), wm.current_ammo, wm.get_ammo_max())
+		_on_index_changed(wm.current_index)
 
 
-func _on_weapon_switched(index: int, weapon: Dictionary) -> void:
-	weapon_label.text = String(weapon.get("name", "")).to_upper()
-	for i in _weapon_buttons.size():
-		_weapon_buttons[i].button_pressed = (i == index)
+func _on_weapon_changed(wname: String, ammo: int, ammo_max: int) -> void:
+	weapon_label.text = wname.to_upper()
+	ammo_label.text = "%d / %d" % [ammo, ammo_max]
 	_refresh_backpack_summary()
 
 
-func _on_ammo_changed(current: int, mag: int) -> void:
+func _on_index_changed(index: int) -> void:
+	for i in _weapon_buttons.size():
+		_weapon_buttons[i].button_pressed = (i == index)
+
+
+func _on_ammo_changed(current: int) -> void:
+	var mag := 30
+	if _weapon_manager != null and is_instance_valid(_weapon_manager):
+		mag = int(_weapon_manager.get_ammo_max())
 	ammo_label.text = "%d / %d" % [current, mag]
 
 
@@ -381,7 +389,7 @@ func _on_reload_started(_duration: float) -> void:
 
 func _on_reload_finished() -> void:
 	if _weapon_manager != null and is_instance_valid(_weapon_manager):
-		_on_ammo_changed(_weapon_manager.get_ammo(), _weapon_manager.get_mag_size())
+		_on_ammo_changed(int(_weapon_manager.current_ammo))
 
 
 func _on_swap_pressed() -> void:
@@ -473,7 +481,7 @@ func _build_weapon_menu() -> void:
 	vbox.add_child(header)
 
 	var title := Label.new()
-	title.text = "BACKPACK & ARMORY (%d WEAPONS)" % _weapon_manager.count()
+	title.text = "BACKPACK & ARMORY (%d WEAPONS)" % _weapon_manager.get_weapon_count()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", 22)
@@ -512,7 +520,7 @@ func _build_weapon_menu() -> void:
 	grid.add_theme_constant_override("v_separation", 8)
 	scroll.add_child(grid)
 
-	for i in _weapon_manager.count():
+	for i in _weapon_manager.get_weapon_count():
 		var w: Dictionary = _weapon_manager.weapons[i]
 		var btn := Button.new()
 		btn.toggle_mode = true
