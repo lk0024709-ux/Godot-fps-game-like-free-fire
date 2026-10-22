@@ -718,13 +718,13 @@ static func _make_procedural_plateau() -> Node3D:
 	var root := Node3D.new()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var grid := [-100.0, -60.0, 60.0, 100.0]
+	var grid: Array[float] = [-100.0, -60.0, 60.0, 100.0]
 	for iz in range(grid.size() - 1):
 		for ix in range(grid.size() - 1):
-			var x0 := grid[ix]
-			var x1 := grid[ix + 1]
-			var z0 := grid[iz]
-			var z1 := grid[iz + 1]
+			var x0: float = grid[ix]
+			var x1: float = grid[ix + 1]
+			var z0: float = grid[iz]
+			var z1: float = grid[iz + 1]
 			var p00 := Vector3(x0, _plateau_vertex_h(x0, z0), z0)
 			var p10 := Vector3(x1, _plateau_vertex_h(x1, z0), z0)
 			var p11 := Vector3(x1, _plateau_vertex_h(x1, z1), z1)

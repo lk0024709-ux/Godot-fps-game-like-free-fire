@@ -204,8 +204,8 @@ func _verify_task2_plane_drop() -> void:
 		player._physics_process(DT)
 	var p1 := plane.global_position
 	var pl1: Vector3 = player.global_position
-	var actual_speed := p0.distance_to(p1) / (float(steps_2s) * DT)
-	var dir_check := (p1 - p0).normalized().dot(_main._plane_direction)
+	var actual_speed: float = p0.distance_to(p1) / (float(steps_2s) * DT)
+	var dir_check: float = (p1 - p0).normalized().dot(Vector3(_main._plane_direction))
 	_assert_true(
 		absf(actual_speed - 50.0) < 0.15 and absf(p1.y - 300.0) < 0.05 and dir_check > 0.9999,
 		"Task2: CargoPlane flies straight across map at 50.0 m/s (measured %.2f m/s, dot=%.5f)" % [actual_speed, dir_check]
@@ -262,7 +262,7 @@ func _verify_task2_plane_drop() -> void:
 	var glide_ticks := 60 # 1.00 second
 	for _i in glide_ticks:
 		player._physics_process(DT)
-	var measured_fall_speed := (y_before_glide - player.global_position.y) / (float(glide_ticks) * DT)
+	var measured_fall_speed: float = (y_before_glide - float(player.global_position.y)) / (float(glide_ticks) * DT)
 	_assert_true(
 		absf(measured_fall_speed - 5.0) < 0.15 and absf(player.velocity.y - (-5.0)) < 0.05,
 		"Task2: Parachute reduces fall speed to 5.0 m/s (measured %.2f m/s)" % measured_fall_speed
