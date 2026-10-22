@@ -81,7 +81,7 @@ const FULL_MAP_TEXTURE: Texture2D = preload("res://assets/ui/rannbhoomi_minimap.
 var weapon_menu: Control = null
 var full_map_modal: Control = null
 
-var _weapon_manager: Node = null
+var _weapon_manager = null
 var _weapon_buttons: Array[Button] = []
 var _bag_summary_label: Label = null
 var _flash_alpha: float = 0.0
@@ -349,7 +349,7 @@ func _on_crouch_button_pressed() -> void:
 
 # ============================================================ WEAPONS & BAG ===
 
-func bind_weapon_manager(wm: Node) -> void:
+func bind_weapon_manager(wm) -> void:
 	_weapon_manager = wm
 	wm.weapon_switched.connect(_on_weapon_switched)
 	wm.ammo_changed.connect(_on_ammo_changed)

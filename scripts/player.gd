@@ -111,6 +111,7 @@ var _plane_chase_cam: Camera3D = null
 var _orbit_yaw: float = 0.0
 var _orbit_pitch: float = -0.34
 var _parachute_rig: Node3D = null
+var _chute_tween: Tween = null
 var _chute_sway_time: float = 0.0
 var _drop_stall_timer: float = 0.0
 var _last_drop_y: float = 300.0
@@ -237,6 +238,9 @@ func request_eject() -> void:
 
 
 func _complete_landing() -> void:
+	if _chute_tween != null and _chute_tween.is_valid():
+		_chute_tween.kill()
+		_chute_tween = null
 	if _parachute_rig != null and is_instance_valid(_parachute_rig):
 		remove_child(_parachute_rig)
 		_parachute_rig.queue_free()
@@ -354,8 +358,8 @@ func _attach_parachute_mesh() -> void:
 	_parachute_rig = rig
 
 	rig.scale = Vector3.ONE * 0.2
-	var tween := create_tween()
-	tween.tween_property(rig, "scale", Vector3.ONE, 0.24).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_chute_tween = create_tween()
+	_chute_tween.tween_property(rig, "scale", Vector3.ONE, 0.24).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 # ============================================================= CHARACTER BODY =

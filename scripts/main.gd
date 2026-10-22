@@ -192,6 +192,9 @@ func _physics_process(delta: float) -> void:
 # ===================================================== PLANE DROP SEQUENCE ====
 
 func _start_plane_drop() -> void:
+	if _cargo_plane != null and is_instance_valid(_cargo_plane):
+		_cargo_plane.queue_free()
+		_cargo_plane = null
 	_plane_elapsed = 0.0
 	_player_ejected = false
 	var start_pos := Vector3(plane_start.x, plane_altitude, plane_start.z)
