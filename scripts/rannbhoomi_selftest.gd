@@ -39,7 +39,7 @@ const RannbhoomiBuilder := preload("res://scripts/rannbhoomi_builder.gd")
 
 const DT: float = 1.0 / 60.0
 
-var _main: Node3D = null
+var _main = null
 var _frame: int = 0
 var _checks: int = 0
 var _failures: Array[String] = []
@@ -116,7 +116,7 @@ func _verify_task1_land_map() -> void:
 	# 3. All 11 Modular Buildings placed in named POIs with Trimesh StaticBody3D colliders
 	var summary: Dictionary = _main._world_summary
 	var placed_mods: Dictionary = summary.get("placed_modular", {})
-	for model_id in RannbhoomiBuilder.REQUIRED_MODULAR_BUILDINGS:
+	for model_id in RannbhoomiBuilder.MODULAR_BUILDING_IDS:
 		_assert_true(
 			placed_mods.has(model_id),
 			"Task1: modular building '%s' placed in POI" % model_id
