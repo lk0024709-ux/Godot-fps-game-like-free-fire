@@ -39,7 +39,10 @@ const BASE_DIRS: Array[String] = ["res://assets/models/", "res://assets/download
 const EXTENSIONS: Array[String] = [".glb", ".gltf", ".obj", ".fbx"]
 
 ## Saari categories
-const CATEGORIES: Array[String] = ["weapons", "nature", "characters", "vehicles", "buildings"]
+const CATEGORIES: Array[String] = [
+	"weapons", "nature", "characters", "vehicles", "buildings",
+	"buildings_modular", "mahal", "terrain",
+]
 
 ## character files ke asli naam — male_1..male_8 / female_1..female_8 alias inhi pe jaate hain.
 ## Spec: **male_1 = Male_Suit** (game roster: Rey = male_1). Baaki files usi order me.
@@ -69,6 +72,8 @@ const VEHICLE_FILES := {
 	"sports": ["SportsCar"],
 	"street": ["SportsCar"],
 	"sports_2": ["SportsCar2"],       # spec: 1 random SportsCar2
+	"plane_cargo_elite": ["plane_cargo_elite"],
+	"cargo_plane": ["plane_cargo_elite"],
 }
 
 ## prefix -> asli FBX naam ka pattern (weapons + nature ke liye)

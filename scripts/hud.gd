@@ -1,391 +1,588 @@
 extends CanvasLayer
 ##
-## HUD
-## - Crosshair (beech me), Health bar (upar baayein), Score (upar daayein)
-## - Weapon name (font 26) + ammo "12 / 30" (font 40) bottom-right
-## - Mobile touch controls: joystick (bottom-left), FIRE / JUMP / RELOAD / SWAP / GUNS
-## - GUNS button se poora weapon-picker khulta hai (28 guns, skin colour ke saath)
-## - Game over panel + "TAP TO RESTART"
+## HUD — Pro Battle Royale Mobile Interface ("Rannbhoomi" Edition)
 ##
-## HUD khud shooting nahi karta — weapon ka kaam weapon_manager.gd dekhta hai,
-## HUD sirf uske signals sunta hai aur dikhata hai.
+## Layout:
+##   - Top-Left:     `MinimapPanel` (`rannbhoomi_minimap.png` + rotating `PlayerArrow` + live POI)
+##   - Top-Center:   `CompassBar` (`N / NE / E / SE / S / SW / W / NW` + degree bearing)
+##   - Top-Right:    `ScoreLabel` + equipped `WeaponLabel` / `AmmoLabel` + `SwapButton` / `GunsButton`
+##   - Bottom-Left:  Dynamic `Joystick` + `BackpackButton` + `HealButton` + `SprintButton`
+##   - Bottom-Center: Stacked `EPBar` (`EPLabel`) + `HealthBar` (`HealthLabel`)
+##   - Bottom-Right: Large `FireButton` + `AimButton`, `JumpButton`, `CrouchButton`, `ReloadButton`
+##   - Drop Overlay: Prominent `EjectPanel/EjectButton` + 15.0s countdown + live altitude banner
+##
+## Every non-interactive Control node strictly enforces `Control.MOUSE_FILTER_IGNORE` so
+## multi-touch works simultaneously across movement, shooting, aiming, crouching, and camera drag.
 ##
 
 signal fire_pressed
 signal fire_released
 signal jump_pressed
+signal aim_toggled(active: bool)
+signal crouch_toggled(active: bool)
+signal sprint_changed(active: bool)
+signal heal_pressed
+signal eject_pressed
 signal restart_pressed
-## Gun-picker se weapon chuna gaya (index). NOTE: switch pehle hi ho chuka hota hai
-## (HUD khud weapon_manager.switch_weapon(index) call karta hai) — ye signal sirf
-## "user ne ye chuna" batane ke liye hai, isliye ise dobara switch karne ke liye use mat karo.
-signal weapon_selected(index: int)
 
-const DATA := preload("res://scripts/weapon_data.gd")
+const FULL_MAP_TEXTURE: Texture2D = preload("res://assets/ui/rannbhoomi_minimap.png")
 
-@onready var health_bar: ProgressBar = $HealthBar
-@onready var health_label: Label = $HealthLabel
+@export var show_touch_controls_on_desktop: bool = true
+
+@onready var hit_flash: ColorRect = $HitFlash
+@onready var crosshair: Control = $Crosshair
+
+# Top-Left: RANNBHOOMI Minimap + Rotating Arrow
+@onready var minimap_panel: Control = $MinimapPanel
+@onready var minimap_view: Control = $MinimapPanel/MinimapView
+@onready var minimap_zone_label: Label = $MinimapPanel/MinimapZoneLabel
+
+# Top-Center: Compass
+@onready var compass_bar: Control = $CompassBar
+@onready var drop_status_banner: ColorRect = $DropStatusBanner
+@onready var drop_status_label: Label = $DropStatusBanner/DropStatusLabel
+
+# Top-Right: Score & Weapon readout
 @onready var score_label: Label = $ScoreLabel
 @onready var weapon_label: Label = $WeaponLabel
 @onready var ammo_label: Label = $AmmoLabel
+
+# Bottom-Center: EP & HP Bars
+@onready var ep_bar: ProgressBar = $EPBar
+@onready var ep_label: Label = $EPLabel
+@onready var health_bar: ProgressBar = $HealthBar
+@onready var health_label: Label = $HealthLabel
+
+# Touch Controls (Bottom-Left + Bottom-Right + Top-Right quick swap)
 @onready var touch_controls: Control = $TouchControls
-@onready var joystick = $TouchControls/Joystick          # joystick.gd wala
-@onready var fire_button: Control = $TouchControls/FireButton        # touch_button.gd wala
-@onready var jump_button: Control = $TouchControls/JumpButton        # touch_button.gd wala
-@onready var reload_button: Control = $TouchControls/ReloadButton    # touch_button.gd wala
-@onready var swap_button: Control = $TouchControls/SwapButton        # touch_button.gd wala
-@onready var guns_button: Control = $TouchControls/GunsButton        # touch_button.gd wala
-@onready var weapon_panel: Control = $WeaponPanel
-@onready var weapon_grid: GridContainer = $WeaponPanel/WeaponGrid
-@onready var panel_title: Label = $WeaponPanel/PanelTitle
-@onready var close_button: Button = $WeaponPanel/CloseButton
+@onready var joystick: Control = $TouchControls/Joystick
+@onready var backpack_button: Control = $TouchControls/BackpackButton
+@onready var heal_button: Control = $TouchControls/HealButton
+@onready var sprint_button: Control = $TouchControls/SprintButton
+@onready var fire_button: Control = $TouchControls/FireButton
+@onready var aim_button: Control = $TouchControls/AimButton
+@onready var jump_button: Control = $TouchControls/JumpButton
+@onready var reload_button: Control = $TouchControls/ReloadButton
+@onready var crouch_button: Control = $TouchControls/CrouchButton
+@onready var swap_button: Control = $TouchControls/SwapButton
+@onready var guns_button: Control = $TouchControls/GunsButton
+@onready var map_expand_button: Control = $TouchControls/MapExpandButton
+
+# Drop Eject UI
+@onready var eject_panel: Control = $EjectPanel
+@onready var eject_countdown_label: Label = $EjectPanel/EjectCountdownLabel
+@onready var eject_button: Control = $EjectPanel/EjectButton
+
+# Game Over
 @onready var game_over_panel: Control = $GameOverPanel
-@onready var dim: ColorRect = $GameOverPanel/Dim
-@onready var final_score_label: Label = $GameOverPanel/FinalScoreLabel
-@onready var restart_button: Button = $GameOverPanel/RestartButton
-@onready var damage_flash: ColorRect = $DamageFlash
+@onready var final_score_label: Label = $GameOverPanel/Box/FinalScoreLabel
+@onready var restart_button: Button = $GameOverPanel/Box/RestartButton
 
-var weapon_manager: Node = null          ## main.gd bind_weapon_manager() se set karta hai
+var weapon_menu: Control = null
+var full_map_modal: Control = null
 
-var _restarting: bool = false
-var _ammo_max: int = 0
+var _weapon_manager: Node = null
 var _weapon_buttons: Array[Button] = []
+var _bag_summary_label: Label = null
+var _flash_alpha: float = 0.0
+var _flash_color: Color = Color(0.92, 0.12, 0.12)
+var _landed_banner_timer: float = 0.0
+
+var _max_health: int = 100
+var _cur_health: int = 100
+var _max_ep: int = 100
+var _cur_ep: int = 100
+var _medkits: int = 5
+var _drop_state: int = 3
+var _drop_countdown: float = 15.0
+var _aim_active: bool = false
+var _crouch_active: bool = false
+var _player_altitude: float = 16.0
 
 
 func _ready() -> void:
-	health_bar.max_value = 100.0
-	set_health(100)
-	set_score(0)
+	var has_touch := DisplayServer.is_touchscreen_available() or OS.has_feature("mobile")
+	touch_controls.visible = has_touch or show_touch_controls_on_desktop
+
+	# Bottom-Right Combat Buttons
+	fire_button.pressed.connect(func() -> void: fire_pressed.emit())
+	fire_button.released.connect(func() -> void: fire_released.emit())
+	jump_button.pressed.connect(func() -> void: jump_pressed.emit())
+	aim_button.pressed.connect(_on_aim_button_pressed)
+	crouch_button.pressed.connect(_on_crouch_button_pressed)
+	reload_button.pressed.connect(_on_reload_pressed)
+
+	# Bottom-Left Utility Buttons
+	backpack_button.pressed.connect(toggle_weapon_menu)
+	heal_button.pressed.connect(func() -> void: heal_pressed.emit())
+	sprint_button.pressed.connect(func() -> void:
+		sprint_button.set_active_highlight(true)
+		sprint_changed.emit(true)
+	)
+	sprint_button.released.connect(func() -> void:
+		sprint_button.set_active_highlight(false)
+		sprint_changed.emit(false)
+	)
+
+	# Quick Swap / Armory / Full Map / Eject / Restart
+	swap_button.pressed.connect(_on_swap_pressed)
+	guns_button.pressed.connect(toggle_weapon_menu)
+	map_expand_button.pressed.connect(toggle_full_map)
+	eject_button.pressed.connect(func() -> void: eject_pressed.emit())
+	restart_button.pressed.connect(func() -> void: restart_pressed.emit())
+
 	game_over_panel.visible = false
-	weapon_panel.visible = false
+	hit_flash.color.a = 0.0
 
-	damage_flash.color = Color(0.8, 0.05, 0.05, 0.0)
-	damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	weapon_label.text = "—"
-	ammo_label.text = "— / —"
-
-	# Touch controls sirf touch-screen (mobile) pe dikhao
-	touch_controls.visible = DisplayServer.is_touchscreen_available()
-
-	# Touch buttons ke signals (ye custom control hai jo raw touch handle karta hai)
-	fire_button.pressed.connect(_on_fire_button_down)
-	fire_button.released.connect(_on_fire_button_up)
-	jump_button.pressed.connect(_on_jump_button_pressed)
-	reload_button.pressed.connect(_on_reload_button_pressed)
-	swap_button.pressed.connect(_on_swap_button_pressed)
-	guns_button.pressed.connect(_on_guns_button_pressed)
-	restart_button.pressed.connect(_on_restart_button_pressed)
-	close_button.pressed.connect(close_weapon_menu)
-
-	# Game over panel pe kahin bhi tap karo -> restart (touch pe pakka kaam karta hai)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	dim.gui_input.connect(_on_dim_gui_input)
-
-	# Gun-picker: grid khud saare touch/click leta hai, panel bahar wala tap
-	weapon_grid.gui_input.connect(_on_weapon_grid_gui_input)
-	weapon_panel.gui_input.connect(_on_weapon_panel_gui_input)
+	_build_full_map_modal()
+	_enforce_non_interactive_mouse_filters()
 
 
-# ==================================================== weapon system se jodna ==
+func _process(delta: float) -> void:
+	if _flash_alpha > 0.0:
+		_flash_alpha = move_toward(_flash_alpha, 0.0, delta * 1.6)
+		hit_flash.color = Color(_flash_color.r, _flash_color.g, _flash_color.b, _flash_alpha)
 
-## main.gd isko call karta hai: hud.bind_weapon_manager(player.weapon_manager)
-func bind_weapon_manager(manager: Node) -> void:
-	weapon_manager = manager
-	if weapon_manager == null or not is_instance_valid(weapon_manager):
+	if _landed_banner_timer > 0.0:
+		_landed_banner_timer -= delta
+		if _landed_banner_timer <= 0.0 and _drop_state == 3:
+			drop_status_banner.visible = false
+
+
+## Recursively guarantees every non-interactive Control node has MOUSE_FILTER_IGNORE
+## so multi-touch controls never get blocked by decorative bars, labels, or frames.
+func _enforce_non_interactive_mouse_filters() -> void:
+	var interactive_nodes := {
+		joystick: true,
+		backpack_button: true,
+		heal_button: true,
+		sprint_button: true,
+		fire_button: true,
+		aim_button: true,
+		jump_button: true,
+		reload_button: true,
+		crouch_button: true,
+		swap_button: true,
+		guns_button: true,
+		map_expand_button: true,
+		eject_button: true,
+		restart_button: true,
+	}
+	for child in get_children():
+		if child == weapon_menu or child == full_map_modal:
+			continue
+		if child is Control:
+			_apply_mouse_filter_tree(child as Control, interactive_nodes)
+
+
+func _apply_mouse_filter_tree(node: Control, interactive_nodes: Dictionary) -> void:
+	if node == game_over_panel or node.name == "Shade":
+		node.mouse_filter = Control.MOUSE_FILTER_STOP
+	elif interactive_nodes.has(node) or node is Button or node is ScrollContainer:
+		node.mouse_filter = Control.MOUSE_FILTER_STOP
+	else:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	for child in node.get_children():
+		if child is Control:
+			_apply_mouse_filter_tree(child as Control, interactive_nodes)
+
+
+# ===================================================== LIVE TELEMETRY UPDATE ==
+
+func update_tactical_hud(
+	player_xz: Vector2,
+	player_yaw: float,
+	altitude_y: float,
+	poi_name: String,
+	enemy_positions: Array[Vector2],
+	has_plane: bool,
+	plane_xz: Vector2,
+	route_start: Vector2,
+	route_end: Vector2
+) -> void:
+	_player_altitude = altitude_y
+	if compass_bar != null and compass_bar.has_method("set_from_yaw"):
+		compass_bar.set_from_yaw(player_yaw)
+
+	if minimap_view != null and minimap_view.has_method("update_radar"):
+		minimap_view.update_radar(
+			player_xz,
+			player_yaw,
+			_drop_state == 0,
+			enemy_positions,
+			has_plane,
+			plane_xz,
+			route_start,
+			route_end
+		)
+
+	if minimap_zone_label != null:
+		minimap_zone_label.text = "RANNBHOOMI · %s" % poi_name
+
+	_refresh_drop_banner()
+
+
+func set_drop_state(state: int) -> void:
+	_drop_state = state
+	var in_plane := state == 0
+	var airborne := state != 3
+
+	eject_panel.visible = in_plane
+	fire_button.visible = not airborne
+	aim_button.visible = not airborne
+	reload_button.visible = not airborne
+	crouch_button.visible = not airborne
+	crosshair.visible = not in_plane
+
+	if state == 3:
+		_landed_banner_timer = 2.4
+		drop_status_banner.visible = true
+		drop_status_label.text = "TOUCHDOWN · WELCOME TO RANNBHOOMI!"
+	else:
+		_landed_banner_timer = 0.0
+		drop_status_banner.visible = true
+		_refresh_drop_banner()
+
+
+func set_drop_countdown(seconds_left: float) -> void:
+	_drop_countdown = maxf(0.0, seconds_left)
+	if eject_countdown_label != null:
+		eject_countdown_label.text = "AUTO EJECT IN %.1fs" % _drop_countdown
+	_refresh_drop_banner()
+
+
+func _refresh_drop_banner() -> void:
+	if drop_status_label == null or not drop_status_banner.visible:
 		return
-
-	weapon_manager.weapon_changed.connect(_on_weapon_changed)
-	weapon_manager.ammo_changed.connect(_on_ammo_changed)
-	weapon_manager.reload_started.connect(_on_reload_started)
-	weapon_manager.reload_finished.connect(_on_reload_finished)
-	weapon_manager.index_changed.connect(_on_weapon_index_changed)
-
-	_build_weapon_grid()
-	_on_weapon_changed(weapon_manager.get_current_name(), weapon_manager.current_ammo,
-			weapon_manager.get_ammo_max())
+	match _drop_state:
+		0:
+			drop_status_label.text = "ELITE CARGO PLANE · ALT %.0fm · 50 m/s" % _player_altitude
+		1:
+			drop_status_label.text = "FREEFALL · ALT %.0fm (PARACHUTE @ 50m)" % _player_altitude
+		2:
+			drop_status_label.text = "PARACHUTE DEPLOYED · ALT %.0fm (5.0 m/s)" % _player_altitude
 
 
-func _on_weapon_changed(weapon_name: String, ammo: int, ammo_max: int) -> void:
-	_ammo_max = ammo_max
-	weapon_label.text = weapon_name
-	ammo_label.modulate = Color(1, 1, 1)
-	ammo_label.text = "%d / %d" % [ammo, ammo_max]
+# ===================================================== VITALS & COMBAT STATE ==
+
+func set_max_health(max_hp: int) -> void:
+	_max_health = maxi(1, max_hp)
+	health_bar.max_value = _max_health
+	set_health(_cur_health)
 
 
-func _on_ammo_changed(ammo: int) -> void:
-	ammo_label.text = "%d / %d" % [ammo, _ammo_max]
-
-
-func _on_reload_started(_reload_time: float) -> void:
-	ammo_label.modulate = Color(1.0, 0.75, 0.35)
-	ammo_label.text = "RELOADING"
-
-
-func _on_reload_finished() -> void:
-	ammo_label.modulate = Color(1, 1, 1)
-	if weapon_manager != null and is_instance_valid(weapon_manager):
-		ammo_label.text = "%d / %d" % [weapon_manager.current_ammo, _ammo_max]
-
-
-func _on_weapon_index_changed(index: int) -> void:
-	for i in _weapon_buttons.size():
-		if i == index:
-			_weapon_buttons[i].modulate = Color(1.0, 0.95, 0.55)     # current gun highlight
+func set_health(hp: int) -> void:
+	_cur_health = clampi(hp, 0, _max_health)
+	health_bar.value = _cur_health
+	health_label.text = "HP  %d / %d" % [_cur_health, _max_health]
+	var fill := health_bar.get("theme_override_styles/fill") as StyleBoxFlat
+	if fill != null:
+		if _cur_health > 55:
+			fill.bg_color = Color(0.18, 0.88, 0.45, 0.96)
+		elif _cur_health > 28:
+			fill.bg_color = Color(0.96, 0.68, 0.16, 0.96)
 		else:
-			_weapon_buttons[i].modulate = Color(0.72, 0.72, 0.72)
+			fill.bg_color = Color(0.94, 0.22, 0.20, 0.96)
+	_refresh_backpack_summary()
 
 
-# ==================================================== gun-picker (28 guns) ==
-
-func _build_weapon_grid() -> void:
-	for child in weapon_grid.get_children():
-		weapon_grid.remove_child(child)
-		child.queue_free()
-	_weapon_buttons.clear()
-	if weapon_manager == null or not is_instance_valid(weapon_manager):
-		return
-
-	var list: Array = weapon_manager.weapons
-	for i in list.size():
-		var weapon: Dictionary = list[i]
-		var button := Button.new()
-		var tag: String = DATA.short_tag(String(weapon.get("shape", "rifle")))
-		button.text = "[%s] %s" % [tag, String(weapon.get("name", "?"))]
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(210, 42)
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 20)
-
-		# Skin colour ko button ke background me dikhao (koi image nahi, sirf StyleBoxFlat)
-		var body_color: Color = weapon.get("body", Color(0.2, 0.2, 0.2))
-		var accent_color: Color = weapon.get("accent", Color(0.6, 0.6, 0.6))
-		var style := StyleBoxFlat.new()
-		style.bg_color = body_color.darkened(0.45)
-		style.border_color = accent_color
-		style.set_border_width_all(2)
-		style.set_corner_radius_all(6)
-		style.content_margin_left = 10.0
-		style.content_margin_top = 6.0
-		button.add_theme_stylebox_override("normal", style)
-
-		var hover := style.duplicate() as StyleBoxFlat
-		hover.bg_color = hover.bg_color.lightened(0.15)
-		button.add_theme_stylebox_override("hover", hover)
-		button.add_theme_stylebox_override("pressed", hover)
-		button.add_theme_color_override("font_color", Color(1, 1, 1))
-		button.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-
-		# Buttons sirf dikhne ke liye hain (IGNORE) — saara input grid khud leta hai.
-		# Wajah: Godot ka Button sirf PEHLI ungli wala emulated mouse sunta hai, isliye
-		# joystick pakde hue doosri ungli se tap karne pe Button kuch nahi karta tha.
-		button.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		weapon_grid.add_child(button)
-		_weapon_buttons.append(button)
-
-	panel_title.text = "WEAPONS  (%d)  —  tap to equip" % list.size()
+func set_max_ep(max_ep_val: int) -> void:
+	_max_ep = maxi(1, max_ep_val)
+	ep_bar.max_value = _max_ep
+	set_ep(_cur_ep)
 
 
-## Gun-picker khula hai? (player.gd isse firing/look rok deta hai)
-func is_menu_open() -> bool:
-	return weapon_panel != null and weapon_panel.visible
+func set_ep(ep_val: int) -> void:
+	_cur_ep = clampi(ep_val, 0, _max_ep)
+	ep_bar.value = _cur_ep
+	ep_label.text = "EP  %d / %d" % [_cur_ep, _max_ep]
+	_refresh_backpack_summary()
 
 
-func open_weapon_menu() -> void:
-	weapon_panel.visible = true
-	if is_firing_ui():
-		_on_fire_button_up()          # menu khulta waqt firing band kar do
-	if weapon_manager != null and is_instance_valid(weapon_manager):
-		_on_weapon_index_changed(weapon_manager.current_index)
-	if not DisplayServer.is_touchscreen_available():
-		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+func set_medkits(count: int) -> void:
+	_medkits = maxi(0, count)
+	heal_button.set_badge(str(_medkits))
+	_refresh_backpack_summary()
 
 
-func close_weapon_menu() -> void:
-	weapon_panel.visible = false
+func set_aim_active(active: bool) -> void:
+	_aim_active = active
+	aim_button.set_active_highlight(active)
+	crosshair.scale = Vector2(0.66, 0.66) if active else Vector2.ONE
 
 
-func toggle_weapon_menu() -> void:
-	if is_menu_open():
-		close_weapon_menu()
-	else:
-		open_weapon_menu()
+func set_crouch_active(active: bool) -> void:
+	_crouch_active = active
+	crouch_button.set_active_highlight(active)
 
 
-func is_firing_ui() -> bool:
-	return fire_button != null and fire_button.get("is_down") == true
+func set_score(score: int) -> void:
+	score_label.text = "SCORE: %d" % score
 
 
-func _on_guns_button_pressed() -> void:
-	toggle_weapon_menu()
-
-
-func _on_weapon_button_pressed(index: int) -> void:
-	if weapon_manager != null and is_instance_valid(weapon_manager):
-		weapon_manager.switch_weapon(index)
-	weapon_selected.emit(index)
-	close_weapon_menu()
-
-
-## Gun-picker ka input: ungli/click jis button pe hai wahi weapon select hota hai.
-## Ye Control object khud saara input leta hai (buttons sirf visual hain), isliye
-## mobile pe joystick ek ungli se pakda ho aur doosri ungli se gun select karo —
-## wo bhi sahi kaam karta hai. (Godot ka normal Button multi-touch me kaam nahi
-## karta: wo sirf pehli ungli ke emulated mouse events sunta hai.)
-func _on_weapon_grid_gui_input(event: InputEvent) -> void:
-	var local := Vector2.ZERO
-	var pressed := false
-	if event is InputEventScreenTouch:
-		var touch := event as InputEventScreenTouch
-		pressed = touch.pressed
-		local = touch.position
-	elif event is InputEventMouseButton:
-		var click := event as InputEventMouseButton
-		if click.button_index != MOUSE_BUTTON_LEFT:
-			return
-		pressed = click.pressed
-		local = click.position
-	else:
-		return
-	if not pressed:
-		return
-
-	# event.position grid ke andar local hai -> canvas space me convert karke
-	# har button ke rect se compare karo
-	var point: Vector2 = weapon_grid.get_global_transform_with_canvas() * local
-	for i in _weapon_buttons.size():
-		var button: Button = _weapon_buttons[i]
-		var rect := Rect2(button.get_global_transform_with_canvas().origin, button.size)
-		if rect.has_point(point):
-			_on_weapon_button_pressed(i)
-			return
-
-
-## Grid ke bahar (panel pe) tap/click -> picker band
-func _on_weapon_panel_gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch:
-		if (event as InputEventScreenTouch).pressed:
-			close_weapon_menu()
-	elif event is InputEventMouseButton:
-		var click := event as InputEventMouseButton
-		if click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
-			close_weapon_menu()
-
-
-# ==================================== public API (bahar se bhi call kar sakte ho)
-# Ye 4 wrapper hain taaki koi bhi script inhe seedha call kar sake.
-# Andar ka kaam wahi handlers karte hain jo weapon_manager ke signals se chalte hain.
-
-func set_weapon(weapon_name: String, ammo: int, ammo_max: int) -> void:
-	_on_weapon_changed(weapon_name, ammo, ammo_max)
-
-
-func set_ammo(ammo: int) -> void:
-	_on_ammo_changed(ammo)
-
-
-func show_reloading() -> void:
-	_on_reload_started(1.2)
-
-
-func hide_reloading() -> void:
-	_on_reload_finished()
-
-
-# ============================================================ values dikhana ==
-
-## HP bar ka maximum set karo (main.gd player.max_health se call karta hai).
-## Isse player ki max HP 100 se badlo to bar bhi apne aap sahi ho jata hai.
-func set_max_health(value: int) -> void:
-	if value > 0:
-		health_bar.max_value = float(value)
-
-
-func set_health(value: int) -> void:
-	health_bar.value = value
-	health_label.text = "HP: %d" % value
-	# HP kam hone pe rang badal jaye (bar ke MAX ke hisaab se, yaani percentage)
-	var max_v: float = maxf(1.0, health_bar.max_value)
-	var pct := float(value) / max_v
-	if pct > 0.6:
-		health_bar.modulate = Color(0.6, 1.0, 0.6)
-	elif pct > 0.3:
-		health_bar.modulate = Color(1.0, 0.85, 0.4)
-	else:
-		health_bar.modulate = Color(1.0, 0.45, 0.4)
-
-
-func set_score(value: int) -> void:
-	score_label.text = "SCORE: %d" % value
-
-
-## player.gd (har bar damage lene pe) isko call karta hai
 func flash_damage() -> void:
-	damage_flash.color = Color(0.8, 0.05, 0.05, 0.35)
-	var tween := create_tween()
-	tween.tween_property(damage_flash, "color:a", 0.0, 0.35)
+	_flash_color = Color(0.92, 0.12, 0.10)
+	_flash_alpha = 0.45
+	hit_flash.color = Color(_flash_color.r, _flash_color.g, _flash_color.b, _flash_alpha)
 
 
-func show_game_over(final_score: int) -> void:
-	close_weapon_menu()
-	final_score_label.text = "SCORE: %d" % final_score
-	game_over_panel.visible = true
-	touch_controls.visible = false     # marne ke baad controls hata do
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+func flash_heal() -> void:
+	_flash_color = Color(0.16, 0.92, 0.48)
+	_flash_alpha = 0.30
+	hit_flash.color = Color(_flash_color.r, _flash_color.g, _flash_color.b, _flash_alpha)
 
 
-# ======================================================= mobile ke liye API ===
-
-## player.gd isko har physics frame padhta hai
 func get_move_vector() -> Vector2:
 	if not touch_controls.visible:
 		return Vector2.ZERO
-	if is_menu_open():
-		return Vector2.ZERO    # gun list khuli hai -> player wahin khada rahe
 	return joystick.output
 
 
-func is_touch_ui_visible() -> bool:
-	return touch_controls.visible
+func _on_aim_button_pressed() -> void:
+	aim_toggled.emit(not _aim_active)
 
 
-# ================================================================== signals ===
-
-func _on_fire_button_down() -> void:
-	fire_pressed.emit()
+func _on_crouch_button_pressed() -> void:
+	crouch_toggled.emit(not _crouch_active)
 
 
-func _on_fire_button_up() -> void:
-	fire_released.emit()
+# ============================================================ WEAPONS & BAG ===
+
+func bind_weapon_manager(wm: Node) -> void:
+	_weapon_manager = wm
+	wm.weapon_switched.connect(_on_weapon_switched)
+	wm.ammo_changed.connect(_on_ammo_changed)
+	wm.reload_started.connect(_on_reload_started)
+	wm.reload_finished.connect(_on_reload_finished)
+
+	_build_weapon_menu()
+
+	var current: Dictionary = wm.get_current()
+	if not current.is_empty():
+		_on_weapon_switched(wm.current_index, current)
+		_on_ammo_changed(wm.get_ammo(), wm.get_mag_size())
 
 
-func _on_jump_button_pressed() -> void:
-	jump_pressed.emit()
+func _on_weapon_switched(index: int, weapon: Dictionary) -> void:
+	weapon_label.text = String(weapon.get("name", "")).to_upper()
+	for i in _weapon_buttons.size():
+		_weapon_buttons[i].button_pressed = (i == index)
+	_refresh_backpack_summary()
 
 
-func _on_reload_button_pressed() -> void:
-	if weapon_manager != null and is_instance_valid(weapon_manager):
-		weapon_manager.start_reload()
+func _on_ammo_changed(current: int, mag: int) -> void:
+	ammo_label.text = "%d / %d" % [current, mag]
 
 
-func _on_swap_button_pressed() -> void:
-	if weapon_manager != null and is_instance_valid(weapon_manager):
-		weapon_manager.next_weapon()
+func _on_reload_started(_duration: float) -> void:
+	ammo_label.text = "RELOADING..."
 
 
-func _on_restart_button_pressed() -> void:
-	_restart_once()
+func _on_reload_finished() -> void:
+	if _weapon_manager != null and is_instance_valid(_weapon_manager):
+		_on_ammo_changed(_weapon_manager.get_ammo(), _weapon_manager.get_mag_size())
 
 
-## Game over panel ke dim area pe tap -> restart
-func _on_dim_gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and not event.pressed:
-		_restart_once()
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		_restart_once()
+func _on_swap_pressed() -> void:
+	if _weapon_manager != null and is_instance_valid(_weapon_manager):
+		_weapon_manager.next_weapon()
 
 
-func _restart_once() -> void:
-	if _restarting:
+func _on_reload_pressed() -> void:
+	if _weapon_manager != null and is_instance_valid(_weapon_manager):
+		_weapon_manager.start_reload()
+
+
+func is_menu_open() -> bool:
+	var bag_open := weapon_menu != null and weapon_menu.visible
+	var map_open := full_map_modal != null and full_map_modal.visible
+	return bag_open or map_open
+
+
+func toggle_weapon_menu() -> void:
+	if weapon_menu == null:
 		return
-	_restarting = true
-	restart_pressed.emit()
+	if full_map_modal != null and full_map_modal.visible:
+		full_map_modal.visible = false
+	weapon_menu.visible = not weapon_menu.visible
+	backpack_button.set_active_highlight(weapon_menu.visible)
+	_sync_cursor_visibility()
+
+
+func toggle_full_map() -> void:
+	if full_map_modal == null:
+		return
+	if weapon_menu != null and weapon_menu.visible:
+		weapon_menu.visible = false
+		backpack_button.set_active_highlight(false)
+	full_map_modal.visible = not full_map_modal.visible
+	map_expand_button.set_active_highlight(full_map_modal.visible)
+	_sync_cursor_visibility()
+
+
+func _sync_cursor_visibility() -> void:
+	if OS.has_feature("mobile") or DisplayServer.get_name().contains("headless"):
+		return
+	if is_menu_open():
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	else:
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+func _refresh_backpack_summary() -> void:
+	if _bag_summary_label == null:
+		return
+	var wname := weapon_label.text
+	_bag_summary_label.text = "EQUIPPED: %s   |   MEDKITS: %d   |   HP: %d/%d   |   EP: %d/%d" % [
+		wname, _medkits, _cur_health, _max_health, _cur_ep, _max_ep
+	]
+
+
+func _build_weapon_menu() -> void:
+	if weapon_menu != null:
+		weapon_menu.queue_free()
+	_weapon_buttons.clear()
+
+	weapon_menu = Control.new()
+	weapon_menu.name = "WeaponMenu"
+	weapon_menu.visible = false
+	weapon_menu.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(weapon_menu)
+	move_child(weapon_menu, game_over_panel.get_index())
+
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.03, 0.05, 0.09, 0.80)
+	weapon_menu.add_child(shade)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 28)
+	weapon_menu.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_theme_constant_override("separation", 10)
+	margin.add_child(vbox)
+
+	var header := HBoxContainer.new()
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(header)
+
+	var title := Label.new()
+	title.text = "BACKPACK & ARMORY (%d WEAPONS)" % _weapon_manager.count()
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1.0, 0.86, 0.36))
+	header.add_child(title)
+
+	var quick_heal := Button.new()
+	quick_heal.text = "USE MEDKIT (+40 HP)"
+	quick_heal.custom_minimum_size = Vector2(180, 42)
+	quick_heal.pressed.connect(func() -> void: heal_pressed.emit())
+	header.add_child(quick_heal)
+
+	var close_btn := Button.new()
+	close_btn.text = "CLOSE"
+	close_btn.custom_minimum_size = Vector2(110, 42)
+	close_btn.pressed.connect(toggle_weapon_menu)
+	header.add_child(close_btn)
+
+	_bag_summary_label = Label.new()
+	_bag_summary_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bag_summary_label.add_theme_font_size_override("font_size", 14)
+	_bag_summary_label.add_theme_color_override("font_color", Color(0.72, 0.92, 1.0))
+	vbox.add_child(_bag_summary_label)
+	_refresh_backpack_summary()
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(scroll)
+
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	scroll.add_child(grid)
+
+	for i in _weapon_manager.count():
+		var w: Dictionary = _weapon_manager.weapons[i]
+		var btn := Button.new()
+		btn.toggle_mode = true
+		btn.text = "%d. %s\n[%s] DMG %.0f" % [
+			i + 1,
+			String(w.get("name", "")),
+			String(w.get("category", "")).to_upper(),
+			float(w.get("damage", 10.0)),
+		]
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.custom_minimum_size = Vector2(0, 56)
+		btn.add_theme_font_size_override("font_size", 13)
+		var slot: int = i
+		btn.pressed.connect(func() -> void: _pick_weapon(slot))
+		grid.add_child(btn)
+		_weapon_buttons.append(btn)
+
+
+func _build_full_map_modal() -> void:
+	full_map_modal = Control.new()
+	full_map_modal.name = "FullMapModal"
+	full_map_modal.visible = false
+	full_map_modal.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(full_map_modal)
+	move_child(full_map_modal, game_over_panel.get_index())
+
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.02, 0.04, 0.08, 0.86)
+	full_map_modal.add_child(shade)
+
+	var map_tex := TextureRect.new()
+	map_tex.name = "RannbhoomiFullMap"
+	map_tex.texture = FULL_MAP_TEXTURE
+	map_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	map_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	map_tex.set_anchors_preset(Control.PRESET_CENTER)
+	map_tex.offset_left = -310.0
+	map_tex.offset_top = -310.0
+	map_tex.offset_right = 310.0
+	map_tex.offset_bottom = 310.0
+	map_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	full_map_modal.add_child(map_tex)
+
+	var close_btn := Button.new()
+	close_btn.text = "CLOSE MAP"
+	close_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	close_btn.offset_left = -164.0
+	close_btn.offset_top = 24.0
+	close_btn.offset_right = -28.0
+	close_btn.offset_bottom = 66.0
+	close_btn.pressed.connect(toggle_full_map)
+	full_map_modal.add_child(close_btn)
+
+
+func _pick_weapon(index: int) -> void:
+	if _weapon_manager != null and is_instance_valid(_weapon_manager):
+		_weapon_manager.switch_weapon(index)
+	if weapon_menu != null:
+		weapon_menu.visible = false
+		backpack_button.set_active_highlight(false)
+	_sync_cursor_visibility()
+
+
+func show_game_over(score: int) -> void:
+	if weapon_menu != null:
+		weapon_menu.visible = false
+	if full_map_modal != null:
+		full_map_modal.visible = false
+	eject_panel.visible = false
+	drop_status_banner.visible = false
+	final_score_label.text = "FINAL SCORE: %d" % score
+	game_over_panel.visible = true

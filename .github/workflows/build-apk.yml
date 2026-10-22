@@ -537,6 +537,38 @@ jobs:
           echo "::error::Terrain collision/walkability test failed"
           exit 1
 
+      # ---- 8f2) Rannbhoomi Land Map + Plane Drop + Pro Mobile HUD full verification ----
+      - name: "8f2) Rannbhoomi Map + Plane Drop + Pro HUD test"
+        run: |
+          set -uo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+
+          LOG="$RUNNER_TEMP/rannbhoomi-selftest.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 600 \
+            scenes/rannbhoomi_selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+
+          cat "$LOG" | tee -a "$DIAG"
+          {
+            echo "## Rannbhoomi Land Map + Plane Drop + Pro HUD verification"
+            echo ""
+            echo '```'
+            grep -E "\[PASS\]|RANNBHOOMI_SELFTEST|SCRIPT ERROR|ERROR:" "$LOG" | tail -n 55 || tail -n 55 "$LOG"
+            echo '```'
+            echo "exit code: $RC"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$RC" -eq 0 ] && grep -q "RANNBHOOMI_SELFTEST_PASS" "$LOG"; then
+            echo "::notice::Rannbhoomi Map + Plane Drop + Pro HUD PASS"
+            exit 0
+          fi
+
+          echo "::error::Rannbhoomi Map / Plane Drop / Pro HUD self-test failed"
+          exit 1
+
       # ---- 8g) UI flow smoke test (splash -> loading -> home -> main) ----
       # Poora UI flow headless chalta hai. `--fixed-fps 60` isliye ki headless me
       # frames bahut tez chalte hain, par Tween/Timer "game time" pe chalte hain —

@@ -44,6 +44,10 @@ const HARD_TIMEOUT := 6.0
 ## hote hain (upar wale Godot bug se bachne ke liye). Manually listed isliye ki
 ## Godot 4.2 me tscn se dependency list nikalne ka koi simple API nahi hai.
 const PREWARM: Array[String] = [
+	"res://assets/ui/rannbhoomi_minimap.png",
+	"res://scripts/rannbhoomi_builder.gd",
+	"res://scripts/minimap_view.gd",
+	"res://scripts/compass_bar.gd",
 	"res://scripts/main.gd",
 	"res://scenes/player.tscn",
 	"res://scenes/enemy.tscn",
