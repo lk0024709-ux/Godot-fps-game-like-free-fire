@@ -7,6 +7,7 @@ extends Node
 ##
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
+const CHARACTERS := preload("res://scripts/character_data.gd")
 
 const EXPECTED_MODULAR_BUILDINGS: Array[String] = [
 	"apartment_green",
@@ -252,7 +253,7 @@ func _verify_task2_plane_drop() -> void:
 		"Task2: Parachute reduces fall speed to 5.0 m/s (measured %.2f m/s)" % measured_fall_speed
 	)
 
-	# 6. Simulate until ground touchdown -> parachute removed & normal FPS enabled
+	# 6. Simulate until ground touchdown -> parachute removed & normal TPV enabled
 	for _i in 900:
 		player._physics_process(DT)
 		if int(player.drop_state) == int(player.DropState.LANDED):
@@ -269,7 +270,7 @@ func _verify_task2_plane_drop() -> void:
 	)
 	_assert_true(
 		bool(player.weapon_holder.visible),
-		"Task2: First-person weapon restored upon landing"
+		"Task2: Third-person weapon restored upon landing"
 	)
 
 
@@ -278,6 +279,16 @@ func _verify_task2_plane_drop() -> void:
 func _verify_task3_hud_and_multitouch() -> void:
 	var player = _main.player
 	var hud = _main.hud
+
+	_assert_true(
+		int(player.max_health) == 200 and float(hud.health_bar.max_value) == 200.0,
+		"TPV/Balance: Player and HUD both use 200 max HP"
+	)
+	_assert_true(
+		player.camera.get_parent() == player.spring_arm
+		and (int(player.camera.cull_mask) & (1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))) != 0,
+		"TPV: Camera is under SpringArm3D and can see the player body layer"
+	)
 
 	# 1. Verify Top-Left Minimap + RANNBHOOMI image + Rotating Arrow
 	var mm_panel: Control = hud.minimap_panel
@@ -372,9 +383,15 @@ func _verify_task3_hud_and_multitouch() -> void:
 	crouch_btn.pressed.emit()
 	_assert_true(not bool(player.is_crouching), "Task3: Crouch button toggles back to standing")
 
-	# 5. Live Simultaneous Multi-Touch Test
-	var bullets_node: Node3D = _main.bullet_container
-	var bullets_before: int = bullets_node.get_child_count()
+	# 5. Live Simultaneous Multi-Touch Test (hitscan + fixed VFX pools)
+	var pool_before: Dictionary = player.effects_pool.get_pool_stats()
+	var shots_before: int = int(player.shots_fired)
+	_assert_true(
+		int(pool_before.get("muzzle_flashes", 0)) == 20
+		and int(pool_before.get("bullet_holes", 0)) == 50
+		and int(pool_before.get("tracers", 0)) == 32,
+		"Optimization: 20 muzzle flashes, 50 bullet holes and 32 tracers preallocated"
+	)
 
 	var joy_touch: InputEventScreenTouch = InputEventScreenTouch.new()
 	joy_touch.index = 0
@@ -404,12 +421,19 @@ func _verify_task3_hud_and_multitouch() -> void:
 
 	var pvel: Vector3 = player.velocity
 	var horiz_speed: float = Vector2(pvel.x, pvel.z).length()
-	var bullets_after: int = bullets_node.get_child_count()
+	var shots_after: int = int(player.shots_fired)
+	var pool_after: Dictionary = player.effects_pool.get_pool_stats()
 	_assert_true(
-		horiz_speed > 2.5 and bool(player.is_firing) and bullets_after > bullets_before and bool(player.is_aiming),
-		"Task3: Multi-touch works simultaneously (speed=%.2f m/s, firing=%s, bullets=%d->%d, aiming=%s)" % [
-			horiz_speed, str(player.is_firing), bullets_before, bullets_after, str(player.is_aiming)
+		horiz_speed > 2.5 and bool(player.is_firing) and shots_after > shots_before and bool(player.is_aiming),
+		"Task3: Multi-touch works simultaneously (speed=%.2f m/s, firing=%s, hitscan shots=%d->%d, aiming=%s)" % [
+			horiz_speed, str(player.is_firing), shots_before, shots_after, str(player.is_aiming)
 		]
+	)
+	_assert_true(
+		int(pool_after.get("allocated_nodes", -1)) == int(pool_before.get("allocated_nodes", -2))
+		and int(pool_after.get("tracer_events", 0)) > int(pool_before.get("tracer_events", 0))
+		and _main.bullet_container.get_child_count() == 0,
+		"Optimization: firing reuses pools and never spawns an Area3D bullet"
 	)
 
 

@@ -1,12 +1,12 @@
 extends CharacterBody3D
 ##
-## Player (FPS + Battle Royale Sky Drop + Tactical Controls)
+## Player (Third-Person + Battle Royale Sky Drop + Tactical Controls)
 ##
 ## States:
 ##   DropState.IN_PLANE  -> locked inside Elite Cargo Dropship at Y=300m (50 m/s)
 ##   DropState.FREEFALL  -> ejected skydiving free-fall with air steering
 ##   DropState.PARACHUTE -> auto-deployed at Y<=50m, 5.0 m/s descent + 3D canopy
-##   DropState.LANDED    -> parachute removed, full FPS movement + ADS + crouch + sprint + combat
+##   DropState.LANDED    -> parachute removed, full TPV movement + ADS + crouch + sprint + combat
 ##
 
 signal health_changed(health: int)
@@ -24,7 +24,6 @@ enum DropState {
 	LANDED = 3,
 }
 
-const BULLET_SCENE := preload("res://scenes/bullet.tscn")
 const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
 const ASSETS := preload("res://scripts/assets.gd")
 const CHARACTERS := preload("res://scripts/character_data.gd")
@@ -51,6 +50,11 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var stand_head_y: float = 1.55
 @export var crouch_head_y: float = 0.96
 
+@export_group("Third-Person Camera")
+@export var hip_spring_length: float = 3.5
+@export var ads_spring_length: float = 1.5
+@export var camera_lerp_speed: float = 12.0
+
 @export_group("Look")
 @export var mouse_sensitivity: float = 0.0025
 @export var touch_sensitivity: float = 0.005
@@ -63,7 +67,7 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var name_tag: bool = true
 
 @export_group("Combat & Survival")
-@export var max_health: int = 100
+@export var max_health: int = 200
 @export var max_ep: int = 100
 @export var starting_medkits: int = 5
 @export var medkit_heal_hp: int = 40
@@ -71,15 +75,18 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var ep_regen_rate: float = 3.5        ## EP -> HP passive conversion per second
 @export var gun_kick: float = 0.05
 @export var muzzle_flash_time: float = 0.05
+@export var hitscan_range: float = 1200.0
 
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
 @onready var head: Node3D = $Head
-@onready var camera: Camera3D = $Head/Camera3D
-@onready var weapon_holder: Node3D = $Head/Camera3D/WeaponHolder
+@onready var spring_arm: SpringArm3D = $Head/SpringArm3D
+@onready var camera: Camera3D = $Head/SpringArm3D/Camera3D
+@onready var weapon_holder: Node3D = $Head/WeaponHolder
+@onready var effects_pool = $CombatEffectsPool
 
 var weapon_manager: Node = null
 var drop_state: int = DropState.LANDED
-var health: int = 100
+var health: int = 200
 var ep: float = 100.0
 var medkits: int = 5
 var is_dead: bool = false
@@ -87,9 +94,9 @@ var is_firing: bool = false
 var is_aiming: bool = false
 var is_crouching: bool = false
 var is_sprinting_ui: bool = false
+var shots_fired: int = 0
 
 var hud = null
-var bullet_parent = null
 
 var _pitch: float = 0.0
 var _recoil: float = 0.0
@@ -99,8 +106,9 @@ var _ep_accum: float = 0.0
 var _holder_base: Vector3 = Vector3.ZERO
 var _fire_timer: float = 0.0
 var _trigger_ready: bool = true
-var _flash_timer: float = 0.0
 var _jump_requested: bool = false
+var _camera_ray: PhysicsRayQueryParameters3D = null
+var _muzzle_ray: PhysicsRayQueryParameters3D = null
 var _eject_requested: bool = false
 var _look_touch: int = -1
 var _is_mobile: bool = false
@@ -123,11 +131,28 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(56.0)
 	floor_snap_length = 0.35
 	camera.far = camera_far
+	spring_arm.spring_length = hip_spring_length
+	spring_arm.collision_mask = 1
+	spring_arm.add_excluded_object(get_rid())
+	# TPV must render the layer used by the player's visible character model.
+	camera.cull_mask = camera.cull_mask | (1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
 	health = max_health
 	ep = float(max_ep)
 	medkits = starting_medkits
 	_is_mobile = OS.has_feature("mobile")
 	_holder_base = weapon_holder.position
+
+	# Reused ray queries avoid per-shot query/exclude-array allocation.
+	_camera_ray = PhysicsRayQueryParameters3D.create(Vector3.ZERO, Vector3.FORWARD)
+	_camera_ray.collision_mask = 1 | 4
+	_camera_ray.collide_with_areas = false
+	_camera_ray.collide_with_bodies = true
+	_camera_ray.exclude = [get_rid()]
+	_muzzle_ray = PhysicsRayQueryParameters3D.create(Vector3.ZERO, Vector3.FORWARD)
+	_muzzle_ray.collision_mask = 1 | 4
+	_muzzle_ray.collide_with_areas = false
+	_muzzle_ray.collide_with_bodies = true
+	_muzzle_ray.exclude = [get_rid()]
 
 	_build_body()
 
@@ -386,7 +411,7 @@ func _build_body() -> void:
 		_add_name_tag(model, CHARACTERS.display_name(character_index))
 
 	ASSETS.set_render_layer(model, CHARACTERS.PLAYER_BODY_LAYER)
-	camera.cull_mask = camera.cull_mask & ~(1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
+	camera.cull_mask = camera.cull_mask | (1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
 
 
 func _add_name_tag(parent: Node3D, text: String) -> void:
@@ -636,6 +661,12 @@ func _apply_look_and_stance(delta: float) -> void:
 	var target_head_y := crouch_head_y if (is_crouching and drop_state == DropState.LANDED) else stand_head_y
 	head.position.y = lerpf(head.position.y, target_head_y, minf(1.0, delta * 12.0))
 
+	# SpringArm3D handles wall collision; only its desired length is smoothed here.
+	var target_spring_length := ads_spring_length if (is_aiming and drop_state == DropState.LANDED) else hip_spring_length
+	spring_arm.spring_length = lerpf(
+		spring_arm.spring_length, target_spring_length, minf(1.0, delta * camera_lerp_speed)
+	)
+
 	# Smooth ADS / Sprint / Base FOV transition
 	var target_fov := base_fov
 	if drop_state == DropState.FREEFALL:
@@ -646,9 +677,9 @@ func _apply_look_and_stance(delta: float) -> void:
 		target_fov = sprint_fov
 	camera.fov = lerpf(camera.fov, target_fov, minf(1.0, delta * 11.0))
 
-	# Weapon position (ADS centered sight vs hip-fire + recoil kick)
+	# World-space weapon follows the chest/head in TPV (not the chase camera).
 	_kick = move_toward(_kick, 0.0, delta * 6.5)
-	var target_holder := Vector3(0.0, -0.14, -0.36) if is_aiming else _holder_base
+	var target_holder := Vector3(0.26, -0.16, -0.50) if is_aiming else _holder_base
 	var bob := Vector3.ZERO
 	if not is_aiming and velocity.length() > move_speed + 0.5 and is_on_floor():
 		bob = Vector3(sin(_bob_time) * 0.018, absf(cos(_bob_time)) * 0.014, 0.0)
@@ -657,11 +688,6 @@ func _apply_look_and_stance(delta: float) -> void:
 		minf(1.0, delta * 16.0)
 	)
 	weapon_holder.rotation = Vector3(deg_to_rad(-4.0 * _kick), 0.0, 0.0)
-
-	if _flash_timer > 0.0:
-		_flash_timer -= delta
-	if weapon_manager != null and is_instance_valid(weapon_manager) and weapon_manager.muzzle != null:
-		weapon_manager.muzzle.visible = _flash_timer > 0.0
 
 
 # ====================================================== TACTICAL & WEAPON API =
@@ -806,8 +832,6 @@ func _handle_firing(delta: float) -> void:
 func shoot() -> void:
 	if is_dead or drop_state != DropState.LANDED:
 		return
-	if bullet_parent == null or not is_instance_valid(bullet_parent):
-		return
 	if weapon_manager == null or not is_instance_valid(weapon_manager):
 		return
 
@@ -819,18 +843,21 @@ func shoot() -> void:
 	var weapon: Dictionary = weapon_manager.get_current()
 	var pellets: int = maxi(1, int(weapon.get("pellets", 1)))
 	var damage: float = float(weapon.get("damage", 10.0))
-	var speed: float = float(weapon.get("bullet_speed", 26.0))
 	var spread: float = float(weapon.get("spread", 0.6))
 	if is_aiming:
 		spread *= 0.35
 	if is_crouching:
 		spread *= 0.70
 
-	var aim: Vector3 = -camera.global_transform.basis.z.normalized()
+	# The center-screen crosshair defines the camera ray in third-person view.
+	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
+	var aim: Vector3 = camera.project_ray_normal(crosshair).normalized()
+	var muzzle_position: Vector3 = _get_muzzle_position()
 	for i in pellets:
-		_spawn_bullet(aim, spread, damage, speed)
+		_fire_hitscan(aim, spread, damage, muzzle_position)
 
 	weapon_manager.consume_ammo()
+	shots_fired += 1
 	_fire_timer = weapon_manager.get_fire_delay()
 	_trigger_ready = false
 
@@ -841,26 +868,60 @@ func shoot() -> void:
 		recoil_deg *= 0.75
 	_recoil += deg_to_rad(recoil_deg)
 	_kick = minf(1.5, recoil_deg)
-	_flash_timer = muzzle_flash_time
+	if effects_pool != null and is_instance_valid(effects_pool):
+		effects_pool.spawn_muzzle_flash(muzzle_position, muzzle_flash_time)
 	Input.vibrate_handheld(25)
 
 
-func _spawn_bullet(aim: Vector3, spread_deg: float, damage: float, speed: float) -> void:
-	var dir := aim
+## Immediate hitscan with a camera aim ray + muzzle obstruction ray.
+## No Area3D bullet is spawned, so automatic fire does not grow the scene tree.
+func _fire_hitscan(aim: Vector3, spread_deg: float, damage: float, muzzle_position: Vector3) -> void:
+	var dir: Vector3 = aim
 	if spread_deg > 0.0:
-		var spread := deg_to_rad(spread_deg)
+		var spread: float = deg_to_rad(spread_deg)
 		dir = dir.rotated(Vector3.UP, randf_range(-spread, spread))
 		dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
 		dir = dir.normalized()
 
-	var bullet = BULLET_SCENE.instantiate()
-	bullet.direction = dir
-	bullet.speed = speed
-	bullet.damage = damage
-	bullet.shooter = self
-	bullet_parent.add_child(bullet)
-	bullet.global_position = camera.global_position + dir * 0.9
-	bullet.face_direction()
+	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
+	var camera_origin: Vector3 = camera.project_ray_origin(crosshair)
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	_camera_ray.from = camera_origin
+	_camera_ray.to = camera_origin + dir * hitscan_range
+	var camera_hit: Dictionary = space.intersect_ray(_camera_ray)
+	var target_point: Vector3 = _camera_ray.to
+	if not camera_hit.is_empty():
+		target_point = camera_hit.get("position", target_point)
+
+	# TPV cameras can see around cover. This second ray prevents the muzzle from
+	# damaging an enemy through a wall that is invisible to the camera ray.
+	_muzzle_ray.from = muzzle_position
+	_muzzle_ray.to = target_point
+	var hit: Dictionary = space.intersect_ray(_muzzle_ray)
+	var end_point: Vector3 = target_point
+	if not hit.is_empty():
+		end_point = hit.get("position", target_point)
+		var collider = hit.get("collider")
+		if collider is Node and (collider as Node).is_in_group("enemy"):
+			if collider.has_method("take_damage"):
+				collider.take_damage(damage)
+			elif collider.has_method("die"):
+				collider.die()
+		if collider is CollisionObject3D and ((collider as CollisionObject3D).collision_layer & 1) != 0:
+			if effects_pool != null and is_instance_valid(effects_pool):
+				var hit_normal: Vector3 = hit.get("normal", Vector3.UP)
+				effects_pool.spawn_bullet_hole(end_point, hit_normal)
+
+	if effects_pool != null and is_instance_valid(effects_pool):
+		effects_pool.spawn_tracer(muzzle_position, end_point)
+
+
+func _get_muzzle_position() -> Vector3:
+	if weapon_manager != null and is_instance_valid(weapon_manager):
+		var muzzle = weapon_manager.muzzle
+		if muzzle is Node3D and is_instance_valid(muzzle):
+			return (muzzle as Node3D).global_position
+	return weapon_holder.to_global(Vector3(0.0, 0.0, -0.6))
 
 
 func start_firing() -> void:

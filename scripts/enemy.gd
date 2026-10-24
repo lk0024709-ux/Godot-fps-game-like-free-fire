@@ -20,6 +20,7 @@ extends CharacterBody3D
 ##
 
 signal died(enemy: Node3D)
+signal health_changed(health: float)
 
 const ASSETS := preload("res://scripts/assets.gd")
 const CHARACTERS := preload("res://scripts/character_data.gd")
@@ -37,6 +38,7 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 
 @export_group("Body")
 @export var show_name: bool = true      ## sar ke upar naam (Label3D)
+@export var show_health_bar: bool = true
 @export var flash_time: float = 0.12    ## goli lagne pe laal chamak
 @export var animation_speed: float = 7.0  ## chalte waqt haath-pair ki raftaar
 
@@ -62,6 +64,8 @@ var _walk_phase: float = 0.0
 var _moving: bool = false
 var _has_limbs: bool = false            ## alag leg_l/arm_l nodes mile?
 var _character_name: String = ""
+var _health_bar_root: Node3D = null
+var _health_fill: MeshInstance3D = null
 
 
 func _ready() -> void:
@@ -70,6 +74,7 @@ func _ready() -> void:
 	_avoid_side = 1.0 if randf() < 0.5 else -1.0
 
 	_build_body()
+	_build_health_bar()
 	_find_player()
 
 
@@ -140,6 +145,46 @@ func _collect_flash_materials(node: Node) -> void:
 			if mat is StandardMaterial3D:
 				_materials.append(mat as StandardMaterial3D)
 				_base_colors.append((mat as StandardMaterial3D).albedo_color)
+
+
+## Lightweight two-quad overhead HP bar; damage only changes its scale.
+func _build_health_bar() -> void:
+	_health_bar_root = Node3D.new()
+	_health_bar_root.name = "HealthBar"
+	_health_bar_root.position = Vector3(0.0, CHARACTERS.ENEMY_HEIGHT + 0.12, 0.0)
+	add_child(_health_bar_root)
+
+	_make_health_quad("Background", Vector2(0.88, 0.095), Color(0.08, 0.025, 0.025))
+	_health_fill = _make_health_quad("Fill", Vector2(0.82, 0.060), Color(0.20, 0.90, 0.32))
+	_health_fill.position.z = 0.002
+	_update_health_bar()
+
+
+func _make_health_quad(node_name: String, quad_size: Vector2, color: Color) -> MeshInstance3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mesh := QuadMesh.new()
+	mesh.size = quad_size
+	mesh.material = material
+	var quad := MeshInstance3D.new()
+	quad.name = node_name
+	quad.mesh = mesh
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	quad.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	_health_bar_root.add_child(quad)
+	return quad
+
+
+func _update_health_bar() -> void:
+	if _health_bar_root == null or _health_fill == null:
+		return
+	var ratio: float = clampf(health / maxf(1.0, max_health), 0.0, 1.0)
+	_health_fill.scale.x = ratio
+	_health_fill.visible = ratio > 0.0
+	_health_bar_root.visible = show_health_bar and not is_dead
 
 
 func _find_player() -> void:
@@ -240,7 +285,9 @@ func _animate_limbs(delta: float) -> void:
 func take_damage(amount: float) -> void:
 	if is_dead:
 		return
-	health -= amount
+	health = maxf(0.0, health - amount)
+	_update_health_bar()
+	health_changed.emit(health)
 	_set_flash(true)
 	_flash_timer = flash_time
 	if health <= 0.0:
@@ -252,6 +299,7 @@ func die() -> void:
 		return
 	is_dead = true
 	velocity = Vector3.ZERO
+	_update_health_bar()
 	died.emit(self)
 	queue_free()
 

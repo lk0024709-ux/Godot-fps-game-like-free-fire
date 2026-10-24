@@ -569,6 +569,26 @@ jobs:
           echo "::error::Rannbhoomi Map / Plane Drop / Pro HUD self-test failed"
           exit 1
 
+      # ---- 8f3) TPV + 200 HP + hitscan/pool live-physics regression test ----
+      - name: "8f3) Third-person camera + balanced HP + hitscan pool test"
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          LOG="$RUNNER_TEMP/combat-selftest.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 120 \
+            scenes/combat_selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+          cat "$LOG"
+          if [ "$RC" -eq 0 ] && grep -q "COMBAT_SELFTEST_PASS" "$LOG" \
+            && ! grep -q "SCRIPT ERROR" "$LOG"; then
+            echo "::notice::TPV, 200 HP, instant hitscan and fixed VFX pools PASS"
+            exit 0
+          fi
+          echo "::error::TPV / HP / hitscan / pool combat self-test failed"
+          exit 1
+
       # ---- 8g) UI flow smoke test (splash -> loading -> home -> main) ----
       # Poora UI flow headless chalta hai. `--fixed-fps 60` isliye ki headless me
       # frames bahut tez chalte hain, par Tween/Timer "game time" pe chalte hain —
