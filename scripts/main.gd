@@ -8,7 +8,7 @@ extends Node3D
 ##      plus grounded vehicles & MultiMesh nature scatter).
 ##   2. Task 2 — Elite Cargo Plane Drop (plane_cargo_elite.glb at Y=300m on NW edge, straight-line
 ##      flight at 50.0 m/s, player locked inside initially, EJECT button + 15.0s auto-eject,
-##      free-fall, parachute auto-deploy at Y=50m -> 5.0 m/s, clean landing -> normal FPS).
+##      free-fall, parachute auto-deploy at Y=50m -> 5.0 m/s, clean landing -> normal TPV).
 ##   3. Task 3 — Live HUD telemetry binding (RANNBHOOMI Minimap + Rotating Arrow, Top-Center Compass,
 ##      HP & EP bars, Backpack, Heal, Fire, Aim, Jump, Crouch, Reload, Multi-touch).
 ##
@@ -127,7 +127,6 @@ func _ready() -> void:
 	_spawn_vehicles()
 
 	player.hud = hud
-	player.bullet_parent = bullet_container
 	hud.bind_weapon_manager(player.weapon_manager)
 
 	# Wire HUD -> Player / Main actions

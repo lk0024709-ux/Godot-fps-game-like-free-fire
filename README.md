@@ -86,10 +86,11 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 
 ## 3. Gameplay rules (jo maanga gaya tha)
 
-- First-person camera, **FOV 75**, player ki head height pe
-- Player **100 HP** se shuru, enemy touch = **-10 HP**
+- Third-person camera: **3.5m SpringArm3D**, ADS pe **1.5m shoulder view**, wall collision se automatic shortening
+- Player aur enemy dono **200 HP** se shuru; enemy touch = **-10 HP**
 - Enemy marne pe **+10 score**
-- Goli **2 second** me gayab, enemy 2 goli me marta hai, takrayi to damage deti hai
+- Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
+- Muzzle flashes (**20**), bullet holes (**50**) aur tracers (**32**) preallocated pools se reuse hote hain
 - Enemies random (8 fixed puntos me se, player se door) spawn hote hain aur chal ke paas aate hain
 - HP 0 → **GAME OVER** screen + restart button
 - Zameen 40×40 (grid shader), cover boxes/pillars, boundary walls, DirectionalLight with shadows
@@ -108,7 +109,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 | Snipers (semi) | 3 | AWM, Kar98k, M82B |
 | Shotguns | 3 | M1014 (6 pellets), MAG-7 (8 pellets), SPAS12 (6 pellets) |
 
-- Har gun ka apna **damage / fire rate / magazine / spread / recoil / bullet speed** hai
+- Har gun ka apna **damage / fire rate / magazine / spread / recoil** hai
   (sab `scripts/weapon_data.gd` me ek-ek line me likha hai — wahi tumhara tuning table hai).
 - **Gun ka 3D model**: 25 guns ka apna asli (CC0) model hai — `scripts/weapon_data.gd` ki
   har line me `"model"` field hai (jaise `"model": "ar_5"` = `AssaultRifle_5.glb`), aur usi ke
@@ -120,8 +121,8 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 - `GUNS` button (ya PC pe `G`) se poori list khulti hai — har button pe us gun ka skin
   colour dikhta hai, tap karo aur gun equip.
 - Ammo poora bhara milta hai (reserve ammo system nahi hai) — simple rakhne ke liye.
-- Enemy ka HP **200** hai taaki chhoti gun aur sniper me farq saaf mehsoos ho.
-  Value badalni ho to `scripts/enemy.gd` me sirf `max_health = 200.0` ka number badal do.
+- Player aur enemy ka HP **200** hai, lekin chhoti gun aur sniper ka damage alag rehta hai.
+  Value badalni ho to `scripts/player.gd` aur `scripts/enemy.gd` ke `max_health` ko saath badlo.
 
 ### Enemy ko marne me kitni goli lagti hai (200 HP pe)
 
@@ -157,9 +158,10 @@ scenes/splash.tscn             # Launch scene #1: logo + PRESENTS (1s in / 1.5s 
 scenes/loading.tscn            # Launch scene #2: progress bar + threaded main.tscn load
 scenes/home.tscn               # Launch scene #3: home menu (BATTLE / GUNS / SETTINGS / coins)
 scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
-scenes/player.tscn             # Player body + head + camera (FOV 75) + gun model
-scenes/enemy.tscn              # Enemy (capsule + head + visor) + wall-check ray
-scenes/bullet.tscn             # Goli ka chhota glowing sphere
+scenes/player.tscn             # Player body + head + SpringArm3D TPV camera + world-space gun + VFX pool
+scenes/enemy.tscn              # Enemy capsule + wall-check ray (body/HP bar code se bante hain)
+scenes/combat_selftest.tscn    # TPV, 200 HP, hitscan aur fixed pools ka live physics test
+scenes/bullet.tscn             # Legacy physical bullet (player firing ab ise use nahi karti)
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 
 scripts/splash.gd              # Splash ka UI + fade tween + loading.tscn pe transition
@@ -170,12 +172,14 @@ scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
 scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
 scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
-scripts/player.gd              # Movement (WASD/joystick), look (mouse/swipe), jump, firing, health/damage, body model
-scripts/enemy.gd               # Dushman: 200 HP, player ko follow karta hai, touch = -10 HP, flash + death, humanoid model
+scripts/player.gd              # TPV movement/camera, 200 HP, instant two-ray hitscan, ADS aur tactical controls
+scripts/combat_effects.gd      # Fixed pools: 20 muzzle flashes + 50 bullet holes + 32 visual tracers
+scripts/combat_selftest.gd     # Live physics assertions: camera collision, HP, 4-hit kill, zero firing allocations
+scripts/enemy.gd               # Dushman: 200 HP + overhead HP bar, follow/touch damage, flash + death
 scripts/asset_loader.gd        # Downloaded models load karta hai, char/vehicle/nature aliases ke saath (fail-safe: na mile to null -> procedural)
 scripts/building_builder.gd    # Enterable buildings (ghar/barn/dukaan): deewar ke tukde + darwaza + light + furniture
 scripts/selftest.gd            # Automatic asset test (CI step 8d): loader/muzzle/height/buildings/fail-soft
-scripts/bullet.gd              # Goli: Area3D (body_entered) + ray-check (no tunnelling), 2.5s lifetime, enemy ko damage
+scripts/bullet.gd              # Legacy Area3D bullet; hitscan player ab ise spawn nahi karta
 scripts/hud.gd                 # HUD values, buttons ke signals, damage flash, game over screen
 scripts/joystick.gd            # Left-half virtual joystick (jahan ungli rakho wahi center; khud draw karta hai)
 scenes/selftest.tscn           # Selftest scene (assets check karta hai, phone pe bhi chala sakte ho)
@@ -209,7 +213,7 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 | Home ka logo | `assets/ui/home_logo.png` daalo (~250x100); na ho to `icon.svg` fallback |
 | Home ke buttons / rang | `scripts/home.gd` → `GOLD`, `PANEL_BG`, `CHIP_BG`, `_panel_style()` |
 | Player speed / jump | `scripts/player.gd` → `move_speed`, `jump_velocity` |
-| Firing speed / damage | `scripts/player.gd` → `fire_cooldown`, `bullet_damage` |
+| Firing speed / damage | `scripts/weapon_data.gd` → har gun ka `fire_rate`, `damage` |
 | Mouse / touch sensitivity | `scripts/player.gd` → `mouse_sensitivity`, `touch_sensitivity` |
 | Enemy speed / HP / damage | `scenes/enemy.tscn` khologe to inspector me dikhega, ya `scripts/enemy.gd` ke `@export` defaults |
 | Kitne enemies + spawn speed | `scenes/main.tscn` → `Main` node ke inspector me (`max_enemies`, `spawn_interval`) |
@@ -222,7 +226,7 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 | Gun ka rang (skin) | `scripts/weapon_data.gd` → wahi line, `GOLD`/`BLACK` jaise colour naam |
 | Naye colour add karne ho | `scripts/weapon_data.gd` ke top pe `const MY_COLOR := Color(...)` |
 | Reload time | `scripts/weapon_manager.gd` → `reload_time` (default 1.2) |
-| Gun ka size screen pe | `scenes/player.tscn` → `Head/Camera3D/WeaponHolder` ki position, aur `weapon_manager.gd` ka `model_scale` (0.7) |
+| Gun ka size/position | `scenes/player.tscn` → `Head/WeaponHolder`, aur `weapon_manager.gd` ka `model_scale` (0.7) |
 | Gun (3D model) ki asli lambai | `scripts/assets.gd` → `WEAPON_TARGET_LENGTH` (pistol 0.30, smg 0.60, rifle 1.20, sniper 1.40, shotgun 1.10 m) |
 | Kisi ek gun ko bada/chhota karna | `scripts/weapon_data.gd` → us gun ki line me `"scale": 1.3` (Bizon/Skorpion isi tarah set hue hain) |
 | Character ki height | `scripts/assets.gd` → `CHARACTER_HEIGHT` (1.8 m) aur `scripts/character_data.gd` → `ENEMY_HEIGHT` |
@@ -232,7 +236,7 @@ docs/renders/                  # 40 guns ke side-view renders (barrel kis taraf 
 | Gaadi kis zone me kaunsi | `scripts/main.gd` → `_spawn_vehicles()` ka zone table (Chowk taxi+sedan, Haveli cop_car, ...) |
 | Nature ki max hadd | `scripts/main.gd` → `max_trees` (80) / `max_rocks` (50) — hadd pe pahunchne pe warning aati hai |
 | Enemy ka HP | `scripts/enemy.gd` → `max_health` (abhi **200** — pistol ~7, sniper 2-3 goli) |
-| Player ki HP | `scripts/player.gd` → `max_health` (abhi 100) — HP bar apne aap isi ke hisaab se set hoti hai |
+| Player ki HP | `scripts/player.gd` → `max_health` (abhi **200**, enemy ke barabar) — HP bar apne aap isi ke hisaab se set hoti hai |
 | Score per kill | `scripts/main.gd` → `_on_enemy_died()` me `score += 10` |
 | HUD ka rang / button size | `scenes/hud.tscn` ke stylebox + offsets |
 

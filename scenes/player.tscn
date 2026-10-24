@@ -1,10 +1,14 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/combat_effects.gd" id="2_effects"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.4
 height = 1.8
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_camera"]
+radius = 0.18
 
 [node name="Player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
@@ -18,11 +22,22 @@ shape = SubResource("CapsuleShape3D_player")
 [node name="Head" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
 
-[node name="Camera3D" type="Camera3D" parent="Head"]
+[node name="SpringArm3D" type="SpringArm3D" parent="Head"]
+collision_mask = 1
+shape = SubResource("SphereShape3D_camera")
+spring_length = 3.5
+margin = 0.15
+
+[node name="Camera3D" type="Camera3D" parent="Head/SpringArm3D"]
 current = true
+cull_mask = 1048575
 fov = 75.0
 near = 0.05
-far = 3000.0
+far = 3200.0
 
-[node name="WeaponHolder" type="Node3D" parent="Head/Camera3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, -0.2, -0.5)
+[node name="WeaponHolder" type="Node3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, -0.24, -0.42)
+
+[node name="CombatEffectsPool" type="Node3D" parent="."]
+top_level = true
+script = ExtResource("2_effects")

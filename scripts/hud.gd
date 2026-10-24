@@ -88,8 +88,8 @@ var _flash_alpha: float = 0.0
 var _flash_color: Color = Color(0.92, 0.12, 0.12)
 var _landed_banner_timer: float = 0.0
 
-var _max_health: int = 100
-var _cur_health: int = 100
+var _max_health: int = 200
+var _cur_health: int = 200
 var _max_ep: int = 100
 var _cur_ep: int = 100
 var _medkits: int = 5
@@ -278,9 +278,9 @@ func set_health(hp: int) -> void:
 	health_label.text = "HP  %d / %d" % [_cur_health, _max_health]
 	var fill := health_bar.get("theme_override_styles/fill") as StyleBoxFlat
 	if fill != null:
-		if _cur_health > 55:
+		if _cur_health > int(round(_max_health * 0.55)):
 			fill.bg_color = Color(0.18, 0.88, 0.45, 0.96)
-		elif _cur_health > 28:
+		elif _cur_health > int(round(_max_health * 0.28)):
 			fill.bg_color = Color(0.96, 0.68, 0.16, 0.96)
 		else:
 			fill.bg_color = Color(0.94, 0.22, 0.20, 0.96)

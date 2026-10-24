@@ -880,8 +880,8 @@ static func nature_mesh(kind: String, variant: int) -> Mesh:
 
 
 ## Kisi node ke saare visual children (MeshInstance3D, Label3D, ...) ka render layer
-## set karo. Player ka body layer 2 pe jata hai aur uske apne camera ka cull_mask
-## layer 2 ko nahi dekhta (FPS me apna body na dikhe).
+## set karo. Player ka body layer 2 pe jata hai; TPV camera ka cull_mask is layer ko
+## explicitly include karta hai taaki third-person me character saaf dikhe.
 static func set_render_layer(node: Node, layer: int) -> void:
 	if node is VisualInstance3D:
 		(node as VisualInstance3D).layers = layer
