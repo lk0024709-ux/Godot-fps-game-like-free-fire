@@ -86,7 +86,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 
 ## 3. Gameplay rules (jo maanga gaya tha)
 
-- Third-person camera: **3.5m SpringArm3D**, ADS pe **1.5m shoulder view**, wall collision se automatic shortening
+- Over-the-shoulder TPV: **0.6m right offset**, **3.5m SpringArm3D**, ADS pe **1.5m + 60 FOV zoom**, wall collision se automatic shortening
 - Player aur enemy dono **200 HP** se shuru; enemy touch = **-10 HP**
 - Enemy marne pe **+10 score**
 - Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
@@ -172,7 +172,7 @@ scripts/weapon_data.gd         # 28 weapons ke stats + skin colours + kaunsa CC0
 scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (signals HUD ko bhejta hai)
 scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
 scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
-scripts/player.gd              # TPV movement/camera, 200 HP, instant two-ray hitscan, ADS aur tactical controls
+scripts/player.gd              # Shoulder TPV, 200 HP, camera-center hitscan (Player RID excluded), ADS controls
 scripts/combat_effects.gd      # Fixed pools: 20 muzzle flashes + 50 bullet holes + 32 visual tracers
 scripts/combat_selftest.gd     # Live physics assertions: camera collision, HP, 4-hit kill, zero firing allocations
 scripts/enemy.gd               # Dushman: 200 HP + overhead HP bar, follow/touch damage, flash + death

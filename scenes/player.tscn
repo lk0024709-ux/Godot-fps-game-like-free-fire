@@ -23,6 +23,7 @@ shape = SubResource("CapsuleShape3D_player")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
 
 [node name="SpringArm3D" type="SpringArm3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0, 0)
 collision_mask = 1
 shape = SubResource("SphereShape3D_camera")
 spring_length = 3.5

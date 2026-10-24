@@ -46,11 +46,12 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export_group("Tactical Stances")
 @export var base_fov: float = 75.0
 @export var sprint_fov: float = 84.0
-@export var ads_fov: float = 46.0
+@export var ads_fov: float = 60.0 ## Lower than base_fov = comfortable ADS zoom-in
 @export var stand_head_y: float = 1.55
 @export var crouch_head_y: float = 0.96
 
 @export_group("Third-Person Camera")
+@export var shoulder_offset: Vector3 = Vector3(0.6, 0.0, 0.0)
 @export var hip_spring_length: float = 3.5
 @export var ads_spring_length: float = 1.5
 @export var camera_lerp_speed: float = 12.0
@@ -108,7 +109,6 @@ var _fire_timer: float = 0.0
 var _trigger_ready: bool = true
 var _jump_requested: bool = false
 var _camera_ray: PhysicsRayQueryParameters3D = null
-var _muzzle_ray: PhysicsRayQueryParameters3D = null
 var _eject_requested: bool = false
 var _look_touch: int = -1
 var _is_mobile: bool = false
@@ -131,6 +131,8 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(56.0)
 	floor_snap_length = 0.35
 	camera.far = camera_far
+	# Offset the arm/pivot, not the Camera child, so wall collision follows it.
+	spring_arm.position = shoulder_offset
 	spring_arm.spring_length = hip_spring_length
 	spring_arm.collision_mask = 1
 	spring_arm.add_excluded_object(get_rid())
@@ -147,12 +149,8 @@ func _ready() -> void:
 	_camera_ray.collision_mask = 1 | 4
 	_camera_ray.collide_with_areas = false
 	_camera_ray.collide_with_bodies = true
+	# Explicit self-exclusion is required even though Player is on collision layer 2.
 	_camera_ray.exclude = [get_rid()]
-	_muzzle_ray = PhysicsRayQueryParameters3D.create(Vector3.ZERO, Vector3.FORWARD)
-	_muzzle_ray.collision_mask = 1 | 4
-	_muzzle_ray.collide_with_areas = false
-	_muzzle_ray.collide_with_bodies = true
-	_muzzle_ray.exclude = [get_rid()]
 
 	_build_body()
 
@@ -852,9 +850,12 @@ func shoot() -> void:
 	# The center-screen crosshair defines the camera ray in third-person view.
 	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
 	var aim: Vector3 = camera.project_ray_normal(crosshair).normalized()
+	# Gun position is visual-only; it is never an input to the damage ray.
 	var muzzle_position: Vector3 = _get_muzzle_position()
 	for i in pellets:
-		_fire_hitscan(aim, spread, damage, muzzle_position)
+		var end_point: Vector3 = _fire_hitscan(aim, spread, damage)
+		if effects_pool != null and is_instance_valid(effects_pool):
+			effects_pool.spawn_tracer(muzzle_position, end_point)
 
 	weapon_manager.consume_ammo()
 	shots_fired += 1
@@ -873,9 +874,10 @@ func shoot() -> void:
 	Input.vibrate_handheld(25)
 
 
-## Immediate hitscan with a camera aim ray + muzzle obstruction ray.
-## No Area3D bullet is spawned, so automatic fire does not grow the scene tree.
-func _fire_hitscan(aim: Vector3, spread_deg: float, damage: float, muzzle_position: Vector3) -> void:
+## Immediate hitscan from Camera3D's center-screen crosshair. The Player RID is
+## excluded in _ready(), and no gun/chest position participates in this query.
+## Returns only the visual tracer endpoint; damage has already been applied.
+func _fire_hitscan(aim: Vector3, spread_deg: float, damage: float) -> Vector3:
 	var dir: Vector3 = aim
 	if spread_deg > 0.0:
 		var spread: float = deg_to_rad(spread_deg)
@@ -888,32 +890,23 @@ func _fire_hitscan(aim: Vector3, spread_deg: float, damage: float, muzzle_positi
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	_camera_ray.from = camera_origin
 	_camera_ray.to = camera_origin + dir * hitscan_range
-	var camera_hit: Dictionary = space.intersect_ray(_camera_ray)
-	var target_point: Vector3 = _camera_ray.to
-	if not camera_hit.is_empty():
-		target_point = camera_hit.get("position", target_point)
+	var hit: Dictionary = space.intersect_ray(_camera_ray)
+	var end_point: Vector3 = _camera_ray.to
+	if hit.is_empty():
+		return end_point
 
-	# TPV cameras can see around cover. This second ray prevents the muzzle from
-	# damaging an enemy through a wall that is invisible to the camera ray.
-	_muzzle_ray.from = muzzle_position
-	_muzzle_ray.to = target_point
-	var hit: Dictionary = space.intersect_ray(_muzzle_ray)
-	var end_point: Vector3 = target_point
-	if not hit.is_empty():
-		end_point = hit.get("position", target_point)
-		var collider = hit.get("collider")
-		if collider is Node and (collider as Node).is_in_group("enemy"):
-			if collider.has_method("take_damage"):
-				collider.take_damage(damage)
-			elif collider.has_method("die"):
-				collider.die()
-		if collider is CollisionObject3D and ((collider as CollisionObject3D).collision_layer & 1) != 0:
-			if effects_pool != null and is_instance_valid(effects_pool):
-				var hit_normal: Vector3 = hit.get("normal", Vector3.UP)
-				effects_pool.spawn_bullet_hole(end_point, hit_normal)
-
-	if effects_pool != null and is_instance_valid(effects_pool):
-		effects_pool.spawn_tracer(muzzle_position, end_point)
+	end_point = hit.get("position", end_point)
+	var collider = hit.get("collider")
+	if collider is Node and (collider as Node).is_in_group("enemy"):
+		if collider.has_method("take_damage"):
+			collider.take_damage(damage)
+		elif collider.has_method("die"):
+			collider.die()
+	if collider is CollisionObject3D and ((collider as CollisionObject3D).collision_layer & 1) != 0:
+		if effects_pool != null and is_instance_valid(effects_pool):
+			var hit_normal: Vector3 = hit.get("normal", Vector3.UP)
+			effects_pool.spawn_bullet_hole(end_point, hit_normal)
+	return end_point
 
 
 func _get_muzzle_position() -> Vector3:
