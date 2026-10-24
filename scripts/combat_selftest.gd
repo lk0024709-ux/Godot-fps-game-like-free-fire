@@ -24,7 +24,8 @@ func _ready() -> void:
 
 	_enemy = ENEMY_SCENE.instantiate()
 	add_child(_enemy)
-	_enemy.global_position = Vector3(0.0, 0.0, -8.0)
+	# Align the target with the offset camera's center ray (local/world X = 0.6).
+	_enemy.global_position = Vector3(0.6, 0.0, -8.0)
 	_enemy.set_physics_process(false)
 
 
@@ -57,18 +58,30 @@ func _run_checks() -> void:
 	var camera: Camera3D = _player.camera as Camera3D
 	_check(arm != null and camera != null and camera.get_parent() == arm,
 		"TPV: Head -> SpringArm3D -> Camera3D hierarchy")
+	_check(arm.position.is_equal_approx(Vector3(0.6, 0.0, 0.0)) and is_zero_approx(camera.position.x),
+		"TPV: SpringArm pivot is offset 0.6m right; Camera stays centered on arm")
 	_check(is_equal_approx(arm.spring_length, 3.5), "TPV: hip-fire spring length is 3.5m")
 	_check(arm.get_hit_length() > 0.1 and arm.get_hit_length() < 3.5,
 		"TPV: wall behind player automatically shortens SpringArm3D (hit=%.2fm)" % arm.get_hit_length())
 	_check((camera.cull_mask & (1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))) != 0,
 		"TPV: Camera cull_mask includes visible player body")
+	var screen_center: Vector2 = get_viewport().get_visible_rect().size * 0.5
+	var body_screen: Vector2 = camera.unproject_position((_player.head as Node3D).global_position)
+	_check(not camera.is_position_behind((_player.head as Node3D).global_position)
+		and body_screen.x < screen_center.x,
+		"TPV: player body projects left of center, leaving the crosshair clear")
 
 	_player.set_aiming(true)
 	_player._apply_look_and_stance(1.0)
 	_check(is_equal_approx(arm.spring_length, 1.5), "TPV: ADS spring length lerps to 1.5m")
+	_check(arm.position.is_equal_approx(Vector3(0.6, 0.0, 0.0)),
+		"TPV: right-shoulder offset remains intact during ADS")
+	_check(is_equal_approx(camera.fov, 60.0) and camera.fov < float(_player.base_fov),
+		"TPV: ADS applies moderate zoom-in FOV (75 -> 60)")
 	_player.set_aiming(false)
 	_player._apply_look_and_stance(1.0)
 	_check(is_equal_approx(arm.spring_length, 3.5), "TPV: hip-fire spring length returns to 3.5m")
+	_check(is_equal_approx(camera.fov, float(_player.base_fov)), "TPV: hip-fire FOV is restored")
 
 	_check(int(_player.max_health) == 200 and int(_player.health) == 200,
 		"Balance: Player starts at 200/200 HP")
@@ -89,8 +102,19 @@ func _run_checks() -> void:
 	var damage: float = float(weapon.get("damage", 55.0))
 	var expected_shots: int = int(ceil(float(_enemy.max_health) / damage))
 	_check(expected_shots == 4, "Balance: starting Desert Eagle kills 200 HP enemy in four hits")
+	var ray_query: PhysicsRayQueryParameters3D = _player._camera_ray as PhysicsRayQueryParameters3D
+	_check(ray_query != null and ray_query.exclude.has((_player as CharacterBody3D).get_rid()),
+		"Hitscan: camera ray explicitly excludes Player CharacterBody3D RID")
 
 	_player.shoot()
+	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
+	var expected_origin: Vector3 = camera.project_ray_origin(crosshair)
+	var expected_direction: Vector3 = camera.project_ray_normal(crosshair).normalized()
+	var actual_direction: Vector3 = (ray_query.to - ray_query.from).normalized()
+	_check(ray_query.from.is_equal_approx(expected_origin),
+		"Hitscan: damage ray starts at Camera3D center, not gun or chest")
+	_check(actual_direction.is_equal_approx(expected_direction),
+		"Hitscan: damage ray follows the center-screen crosshair")
 	var expected_after_one: float = maxf(0.0, 200.0 - damage)
 	_check(is_equal_approx(float(_enemy.health), expected_after_one),
 		"Hitscan: first shot applies %.0f damage instantly (HP=%.0f)" % [damage, float(_enemy.health)])
