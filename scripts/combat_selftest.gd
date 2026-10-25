@@ -83,57 +83,62 @@ func _run_checks() -> void:
 	_check(is_equal_approx(arm.spring_length, 3.5), "TPV: hip-fire spring length returns to 3.5m")
 	_check(is_equal_approx(camera.fov, float(_player.base_fov)), "TPV: hip-fire FOV is restored")
 
-	# Shared boneless VisualHolder animation: exercise each state deterministically.
+	# Real rigged player_animated.glb + shared skeletal Idle/Walk controller.
 	var player_visual = _player.visual_holder
 	var enemy_visual = _enemy.visual_holder
 	_check(player_visual != null and enemy_visual != null
 		and player_visual.get_script() == enemy_visual.get_script(),
-		"Animation: Player and Enemy share the same procedural VisualHolder animator")
+		"Animation: Player and Enemy share the same rigged VisualHolder animator")
 	_check(player_visual.get_node_or_null("Body") != null
 		and _player.collision_shape.get_parent() == _player and _player.head.get_parent() == _player,
 		"Animation: visual mesh is isolated from collision and camera hierarchy")
 
-	player_visual.set_motion(0.0, 0.0, true, 10.0)
-	player_visual._idle_phase = 0.0
-	player_visual._walk_phase = 0.0
-	player_visual._was_grounded = true
-	player_visual._landing_weight = 0.0
-	player_visual.position = Vector3.ZERO
-	player_visual.rotation = Vector3.ZERO
-	player_visual.scale = Vector3.ONE
-	for _i in 12:
-		player_visual._process(1.0 / 60.0)
-	_check(absf(player_visual.position.y) > 0.003 and absf(player_visual.scale.y - 1.0) > 0.001,
-		"Animation: idle breathing moves and gently scales the character")
+	var player_body := player_visual.get_node_or_null("Body") as Node3D
+	var enemy_body := enemy_visual.get_node_or_null("Body") as Node3D
+	_check(player_body != null and enemy_body != null
+		and bool(player_body.get_meta("real_glb", false))
+		and bool(enemy_body.get_meta("real_glb", false)),
+		"Animation: Player and Enemy both load the real player_animated.glb")
+	_check(player_body != null
+		and player_body.find_children("*", "Skeleton3D", true, false).size() >= 1,
+		"Animation: imported character contains a real Skeleton3D rig")
 
-	player_visual.set_motion(6.0, 0.0, true, 10.0)
-	player_visual._walk_phase = 0.0
-	for _i in 12:
-		player_visual._process(1.0 / 60.0)
-	_check(absf(player_visual.position.y) > 0.01 and player_visual.rotation.x < deg_to_rad(-3.0)
-		and absf(player_visual.rotation.z) > deg_to_rad(0.5),
-		"Animation: walking adds vertical bob, forward lean and side sway")
+	var player_anim := player_visual.get_animation_player() as AnimationPlayer
+	var enemy_anim := enemy_visual.get_animation_player() as AnimationPlayer
+	_check(player_anim != null and enemy_anim != null,
+		"Animation: both imported characters expose an AnimationPlayer")
+	if player_anim != null:
+		_check(player_anim.has_animation("Idle") and player_anim.has_animation("Walk"),
+			"Animation: exact Idle and Walk clips exist")
+		_check(player_anim.get_animation("Idle").loop_mode == Animation.LOOP_LINEAR
+			and player_anim.get_animation("Walk").loop_mode == Animation.LOOP_LINEAR,
+			"Animation: Idle and Walk are configured to loop")
 
-	player_visual.set_motion(0.0, 5.0, false, 10.0)
-	for _i in 12:
-		player_visual._process(1.0 / 60.0)
-	_check(player_visual.scale.y > 1.05, "Animation: jumping stretches visual Y scale")
-	player_visual.set_motion(0.0, -5.0, false, 10.0)
-	for _i in 12:
-		player_visual._process(1.0 / 60.0)
-	_check(player_visual.rotation.x > deg_to_rad(3.0), "Animation: falling tilts the character backward")
 	player_visual.set_motion(0.0, 0.0, true, 10.0)
 	player_visual._process(1.0 / 60.0)
-	_check(player_visual.scale.y < 0.93, "Animation: landing applies an immediate squash pose")
+	_check(player_visual.get_active_clip() == &"Idle"
+		and player_anim != null and player_anim.is_playing(),
+		"Animation: stationary player plays Idle")
+	player_visual.set_motion(6.0, 0.0, true, 10.0)
+	player_visual._process(1.0 / 60.0)
+	_check(player_visual.get_active_clip() == &"Walk"
+		and player_anim != null and player_anim.current_animation == "Walk",
+		"Animation: moving player crossfades to Walk")
+	if player_anim != null:
+		player_anim.advance(0.20)
+		_check(player_anim.current_animation_position > 0.0,
+			"Animation: Walk clip time advances on the rig")
+
+	player_visual.set_motion(0.0, 5.0, false, 10.0)
+	player_visual._process(1.0 / 60.0)
+	_check(player_visual.get_active_clip() == &"Idle",
+		"Animation: airborne player returns to Idle without moving the collision/camera")
 
 	enemy_visual.set_motion(2.6, 0.0, true, 2.6)
-	enemy_visual._walk_phase = 0.0
-	enemy_visual._was_grounded = true
-	enemy_visual._landing_weight = 0.0
-	for _i in 12:
-		enemy_visual._process(1.0 / 60.0)
-	_check(absf(enemy_visual.position.y) > 0.01 and enemy_visual.rotation.x < deg_to_rad(-4.0),
-		"Animation: enemy uses the same movement bob and forward lean")
+	enemy_visual._process(1.0 / 60.0)
+	_check(enemy_visual.get_active_clip() == &"Walk"
+		and enemy_anim != null and enemy_anim.current_animation == "Walk",
+		"Animation: moving NPC plays the same skeletal Walk clip")
 
 	_check(int(_player.max_health) == 200 and int(_player.health) == 200,
 		"Balance: Player starts at 200/200 HP")

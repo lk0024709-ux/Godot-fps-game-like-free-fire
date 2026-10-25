@@ -4,8 +4,8 @@ extends RefCounted
 ##
 ## Assembles the complete Battle Royale map ("Rannbhoomi"):
 ##   1. Seamless Grass Terrain (replaces old blue/green debug grid shader completely)
-##   2. 200x200x15m Central Plateau with 4 cardinal walk-up ramps
-##   3. Grand Rajasthani Mahal at exact center (0, 15, 0)
+##   2. Full terrain tiles at ground level (grass, foothills, and Mount Abu)
+##   3. Grand Rajasthani Mahal at exact center (0, 0, 0)
 ##   4. All 11 Modular Buildings organized into named POIs:
 ##        - Shahi Mahal & Crossroads Outposts (Center ring)
 ##        - Veergram Village (South-West)
@@ -20,12 +20,12 @@ extends RefCounted
 ## World coordinate mapping matching assets/ui/rannbhoomi_minimap.png (1:1 orthographic):
 ## u = 0.5 + x / MAP_MINIMAP_SPAN, v = 0.5 + z / MAP_MINIMAP_SPAN
 const MAP_MINIMAP_SPAN: float = 1400.0
-const MAHAL_CENTER_POS := Vector3(0.0, 15.0, 0.0)
+const MAHAL_CENTER_POS := Vector3.ZERO
 const ARAVALLI_NW_POS := Vector3(-350.0, 0.0, -360.0)
 
 const MAHAL_PATHS: Array[String] = [
-	"res://assets/models/rajasthani_mahal_full.glb",
 	"res://assets/models/mahal/rajasthani_mahal_full.glb",
+	"res://assets/models/rajasthani_mahal_full.glb",
 	"res://assets/models/mahal/rajasthani_mahal_mega.glb",
 	"res://assets/downloaded_models/rajasthani_mahal_mega.glb",
 	"res://assets/downloaded_models/mahal/rajasthani_mahal_mega.glb",
@@ -171,14 +171,12 @@ static func build_world(world_root: Node3D, arena_size: float = 2000.0) -> Dicti
 	summary["terrain_real"] = grass_info["real"]
 	summary["trimesh_colliders"] = int(summary["trimesh_colliders"]) + int(grass_info["colliders"])
 
-	# 3. Central 200x200x15m Plateau with 4 walk-up ramps so center is exact Y = 15.0
-	var plateau_info := _build_central_plateau(terrain_root)
-	summary["trimesh_colliders"] = int(summary["trimesh_colliders"]) + int(plateau_info["colliders"])
-
-	# 4. Scenic dirt road network connecting Center Mahal <-> all 4 corner POIs
+	# 3. Scenic dirt road network connecting Center Mahal <-> all 4 corner POIs.
+	# The palace and its walkable floor sit directly on the ground at Y=0;
+	# no raised plateau is allowed to bury the restored rajasthani_mahal_full.glb.
 	_build_dirt_roads(terrain_root)
 
-	# 5. Grand Rajasthani Mahal at exact center (0, 15, 0)
+	# 4. Grand Rajasthani Mahal at exact center (0, 0, 0)
 	var mahal_info := _build_mahal(world_root)
 	summary["mahal_real"] = mahal_info["real"]
 	summary["trimesh_colliders"] = int(summary["trimesh_colliders"]) + int(mahal_info["colliders"])
@@ -250,18 +248,8 @@ static func load_cargo_plane() -> Node3D:
 
 ## Analytical fast ground elevation estimate (used before physics flush or for fast prop scatter).
 static func sample_ground_height(x: float, z: float) -> float:
-	# 1. Central 200x200m Plateau (-100..+100): flat 120x120m top (-60..+60) at Y = 15.0,
-	#    sloped ramps out to +-100m.
-	var ax := absf(x)
-	var az := absf(z)
-	if ax <= 100.0 and az <= 100.0:
-		if ax <= 60.0 and az <= 60.0:
-			return 15.0
-		var edge := maxf(ax, az)
-		var t := clampf((edge - 60.0) / 40.0, 0.0, 1.0)
-		return lerpf(15.0, 0.0, t)
-
-	# 2. North-West Aravalli Mountain (-350, -360), 150x150m tile (-75..+75), summit r<=30 at Y=25m
+	# North-West Aravalli Mountain (-350, -360), 150x150m tile (-75..+75), summit r<=30 at Y=25m.
+	# Everywhere else, including the Mahal and its forecourt, is ground level Y=0.
 	var dx := x - ARAVALLI_NW_POS.x
 	var dz := z - ARAVALLI_NW_POS.z
 	if absf(dx) <= 75.0 and absf(dz) <= 75.0:
@@ -298,7 +286,7 @@ static func world_to_minimap_uv(x: float, z: float) -> Vector2:
 
 static func _build_grass_terrain(parent: Node3D, arena_size: float) -> Dictionary:
 	var colliders := 0
-	var real_used := false
+	var real_used := true
 	var grass_mat := _get_grass_material(26.0)
 	var tile_offsets := [
 		Vector3(-500.0, -0.03, -500.0),
@@ -310,15 +298,17 @@ static func _build_grass_terrain(parent: Node3D, arena_size: float) -> Dictionar
 	for i in tile_offsets.size():
 		var tile := _instantiate_first(TERRAIN_GROUND_PATHS)
 		if tile != null:
-			real_used = true
 			tile.name = "GrassTile_%d" % i
+			tile.set_meta("real_glb", true)
 			tile.position = tile_offsets[i]
 			_upgrade_grass_meshes_if_needed(tile, grass_mat)
 			_set_shadows_recursive(tile, false)
 			parent.add_child(tile)
 			colliders += ensure_trimesh_collision(tile)
 		else:
+			real_used = false
 			var fallback_tile := _make_grass_tile_mesh("GrassTile_%d" % i, 1000.0, grass_mat)
+			fallback_tile.set_meta("real_glb", false)
 			fallback_tile.position = tile_offsets[i]
 			parent.add_child(fallback_tile)
 			colliders += ensure_trimesh_collision(fallback_tile)
@@ -396,9 +386,11 @@ static func _build_flanking_hills(parent: Node3D) -> Dictionary:
 	for i in hill_positions.size():
 		var spec: Dictionary = hill_positions[i]
 		var hill := _instantiate_first(TERRAIN_HILL_PATHS)
+		var is_real := hill != null
 		if hill == null:
 			hill = _make_procedural_hill()
 		hill.name = "AravalliFoothill_%d" % i
+		hill.set_meta("real_glb", is_real)
 		hill.position = spec["pos"]
 		hill.rotation.y = float(spec["yaw"])
 		hill.scale = spec["scale"]
@@ -532,6 +524,18 @@ static func ensure_trimesh_collision(root: Node, collision_layer_bits: int = 1) 
 	for child in root.get_children():
 		created += ensure_trimesh_collision(child, collision_layer_bits)
 	return created
+
+
+## Vehicles and close nature props used to carry coarse Box/Capsule shapes.
+## Disable only those primitive shapes after accurate per-mesh concave collision
+## has been added; no visual node or asset folder is removed.
+static func disable_non_trimesh_collisions(root: Node) -> void:
+	if root is CollisionShape3D:
+		var collision := root as CollisionShape3D
+		if collision.shape != null and not (collision.shape is ConcavePolygonShape3D):
+			collision.disabled = true
+	for child in root.get_children():
+		disable_non_trimesh_collisions(child)
 
 
 static func _get_or_create_trimesh(mesh: Mesh) -> ConcavePolygonShape3D:

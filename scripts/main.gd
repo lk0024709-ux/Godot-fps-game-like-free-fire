@@ -3,8 +3,8 @@ extends Node3D
 ## Main (Battle Royale Game Manager) — Map: "Rannbhoomi"
 ##
 ## Orchestrates:
-##   1. Task 1 — Land Map Assembly (Grass Terrain, Central 15m Plateau, Grand Rajasthani Mahal
-##      at (0, 15, 0), all 11 Modular Buildings in named POIs, NW Aravalli Mountain, Trimesh collisions,
+##   1. Task 1 — Land Map Assembly (Grass Terrain, Grand Rajasthani Mahal
+##      at (0, 0, 0), all 11 Modular Buildings in named POIs, NW Aravalli Mountain, Trimesh collisions,
 ##      plus grounded vehicles & MultiMesh nature scatter).
 ##   2. Task 2 — Elite Cargo Plane Drop (plane_cargo_elite.glb at Y=300m on NW edge, straight-line
 ##      flight at 50.0 m/s, player locked inside initially, EJECT button + 15.0s auto-eject,
@@ -115,6 +115,9 @@ var _ground_match_started: bool = false
 var _building_spots: Array = []
 var _hill_spots: Array = []
 var _world_summary: Dictionary = {}
+var _nature_shape_cache: Dictionary = {}
+var _nature_collidable_props: int = 0
+var _nature_trimesh_props: int = 0
 
 # Cargo plane runtime state
 var _cargo_plane: Node3D = null
@@ -174,7 +177,7 @@ func _ready() -> void:
 	if plane_drop_enabled:
 		_start_plane_drop()
 	else:
-		player.global_position = Vector3(0.0, 16.2, 26.0)
+		player.global_position = Vector3(0.0, 1.2, 26.0)
 		_begin_ground_match()
 
 	_push_hud_telemetry()
@@ -288,6 +291,8 @@ func _build_arena() -> void:
 	_build_boundary_walls()
 	_build_mahal_courtyard_cover()
 	_scatter_nature()
+	_world_summary["nature_collidable_props"] = _nature_collidable_props
+	_world_summary["nature_trimesh_props"] = _nature_trimesh_props
 
 
 func _build_ocean() -> void:
@@ -321,12 +326,12 @@ func _build_boundary_walls() -> void:
 
 
 func _build_mahal_courtyard_cover() -> void:
-	# Tactical royal sandstone/wood cover crates around the Shahi Mahal forecourt (Y = 15m)
+	# Tactical royal sandstone/wood cover crates around the ground-level Mahal forecourt.
 	var forecourt_crates := [
-		[Vector3(-18.0, 16.0, 32.0), Vector3(2.4, 2.0, 2.4), Color(0.66, 0.46, 0.25)],
-		[Vector3(18.0, 16.0, 32.0), Vector3(2.4, 2.0, 2.4), Color(0.66, 0.46, 0.25)],
-		[Vector3(-34.0, 16.0, 0.0), Vector3(2.4, 2.0, 3.0), Color(0.62, 0.43, 0.23)],
-		[Vector3(34.0, 16.0, 0.0), Vector3(2.4, 2.0, 3.0), Color(0.62, 0.43, 0.23)],
+		[Vector3(-18.0, 1.0, 32.0), Vector3(2.4, 2.0, 2.4), Color(0.66, 0.46, 0.25)],
+		[Vector3(18.0, 1.0, 32.0), Vector3(2.4, 2.0, 2.4), Color(0.66, 0.46, 0.25)],
+		[Vector3(-34.0, 1.0, 0.0), Vector3(2.4, 2.0, 3.0), Color(0.62, 0.43, 0.23)],
+		[Vector3(34.0, 1.0, 0.0), Vector3(2.4, 2.0, 3.0), Color(0.62, 0.43, 0.23)],
 	]
 	for item in forecourt_crates:
 		_add_box(item[0], item[1], item[2])
@@ -419,6 +424,13 @@ func _scatter_nature() -> void:
 			prop.position = item["pos"]
 			prop.rotation.y = float(item["yaw"])
 			container.add_child(prop)
+			if collidable:
+				_nature_collidable_props += 1
+				var prop_colliders := RannbhoomiBuilder.ensure_trimesh_collision(prop)
+				RannbhoomiBuilder.disable_non_trimesh_collisions(prop)
+				if prop_colliders > 0:
+					_nature_trimesh_props += 1
+					prop.set_meta("trimesh_collision", true)
 			spawned += 1
 
 		total_placed += spawned
@@ -533,7 +545,60 @@ func _spawn_multimesh(container: Node3D, kind: String, placements: Array) -> boo
 		if nature_view_distance > 0.0:
 			node.visibility_range_end = nature_view_distance
 		container.add_child(node)
+
+		# MultiMesh is only the rendering optimization. Every tree/rock still
+		# receives an exact StaticBody3D + ConcavePolygonShape3D using the same
+		# transform and a cached shape shared by that mesh variant.
+		if kind == "tree" or kind == "rock":
+			for item in items:
+				_nature_collidable_props += 1
+				if _add_nature_trimesh_body(
+					container,
+					kind,
+					meshes[variant] as Mesh,
+					item,
+					offset
+				):
+					_nature_trimesh_props += 1
 	return true
+
+
+func _add_nature_trimesh_body(
+	container: Node3D,
+	kind: String,
+	mesh: Mesh,
+	item: Dictionary,
+	ground_offset: Vector3
+) -> bool:
+	var shape := _nature_trimesh_shape(mesh)
+	if shape == null:
+		return false
+	var body := StaticBody3D.new()
+	body.name = "%sTrimeshCollision" % kind.capitalize()
+	body.collision_layer = 1
+	body.collision_mask = 1
+	body.position = item["pos"]
+	body.rotation.y = float(item["yaw"])
+	body.scale = Vector3.ONE * float(item["scale"])
+	body.set_meta("nature_kind", kind)
+	var collision := CollisionShape3D.new()
+	collision.name = "TrimeshCollisionShape3D"
+	collision.shape = shape
+	collision.position = ground_offset
+	body.add_child(collision)
+	container.add_child(body)
+	return true
+
+
+func _nature_trimesh_shape(mesh: Mesh) -> ConcavePolygonShape3D:
+	var key := mesh.get_rid()
+	if _nature_shape_cache.has(key):
+		return _nature_shape_cache[key] as ConcavePolygonShape3D
+	var shape := mesh.create_trimesh_shape()
+	if shape != null:
+		shape.backface_collision = true
+		_nature_shape_cache[key] = shape
+	return shape
 
 
 func _mesh_ground_offset(mesh: Mesh) -> Vector3:
@@ -638,9 +703,14 @@ func _spawn_vehicles() -> void:
 
 func _make_vehicle(model_name: String) -> StaticBody3D:
 	var body := Assets.build_vehicle_model(model_name)
+	var is_real := body != null
 	if body == null:
 		var color: Color = VEHICLE_COLORS.get(model_name, VEHICLE_COLORS["default"])
 		body = Assets.fallback_vehicle(model_name, color)
+	body.set_meta("real_glb", is_real)
+	body.set_meta("garage_model", model_name)
+	RannbhoomiBuilder.ensure_trimesh_collision(body)
+	RannbhoomiBuilder.disable_non_trimesh_collisions(body)
 	return body
 
 

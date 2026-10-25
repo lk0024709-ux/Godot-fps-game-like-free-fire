@@ -717,7 +717,7 @@ static func _shotgun(body_color: Color, accent_color: Color) -> Node3D:
 ## Grass_Large_Extruded.glb (aliases asset_loader.gd ke SPECIAL_ALIASES me hain).
 ## Ye pool ginti bhi tay karta hai: bade pool = zyada variety.
 const NATURE_MODELS := {
-	"tree": ["pine_1", "pine_2", "pine_3", "pine_4", "pine_5"],
+	"tree": ["tree_pine", "tree_oak", "tree_palm", "pine_1", "pine_2"],
 	"rock": ["rock_1", "rock_2", "rock_3", "rock_4", "rock_5"],
 	"bush": ["plant_1", "plant_2", "plant_flowers"],
 	"plant": ["plant_1", "plant_2", "plant_flowers"],

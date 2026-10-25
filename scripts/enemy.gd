@@ -1,7 +1,7 @@
 extends CharacterBody3D
 ## Independent Battle Royale NPC: parachute, loot, patrol, free-for-all combat,
 ## flee/cover, vision + hearing, and distance-culled thinking.
-## VisualHolder remains the shared whole-mesh procedural animator.
+## VisualHolder drives the shared rigged character's Idle/Walk AnimationPlayer.
 
 signal died(enemy: Node3D)
 signal health_changed(health: float)
@@ -10,6 +10,7 @@ enum State { PARACHUTE, LOOTING, PATROLLING, COMBAT, FLEEING, DEAD }
 
 const ASSETS := preload("res://scripts/assets.gd")
 const CHARACTERS := preload("res://scripts/character_data.gd")
+const ANIMATED_CHARACTER_PATH := "res://assets/models/characters/player_animated.glb"
 
 @export_group("Stats")
 @export var max_health: float = 200.0
@@ -615,29 +616,45 @@ func _find_player() -> void:
 
 
 func _build_body() -> void:
-	var pick: String = CHARACTERS.ENEMY_POOL[_rng.randi() % CHARACTERS.ENEMY_POOL.size()]
-	var model := ASSETS.build_character_model(
-		pick, Color(0.60, 0.20, 0.18), Color(0.30, 0.12, 0.12), CHARACTERS.ENEMY_TINT
-	)
+	# Every NPC uses the same real rigged character as the human; independent
+	# AI/state remains in this controller while VisualHolder plays Idle/Walk.
+	var model := _load_animated_character()
 	if model == null:
-		model = ASSETS.fallback_character(
-			Color(0.60, 0.20, 0.18), Color(0.30, 0.12, 0.12), CHARACTERS.ENEMY_TINT
+		var pick: String = CHARACTERS.ENEMY_POOL[_rng.randi() % CHARACTERS.ENEMY_POOL.size()]
+		model = ASSETS.build_character_model(
+			pick, Color(0.60, 0.20, 0.18), Color(0.30, 0.12, 0.12), CHARACTERS.ENEMY_TINT
 		)
-		_character_name = "Dushman"
-	model.name = "Body"
-	visual_holder.add_child(model)
-	_body = model
-	ASSETS.fit_to_height(model, CHARACTERS.ENEMY_HEIGHT)
-	_leg_l = model.find_child("leg_l", true, false) as Node3D
-	_leg_r = model.find_child("leg_r", true, false) as Node3D
-	_arm_l = model.find_child("arm_l", true, false) as Node3D
-	_arm_r = model.find_child("arm_r", true, false) as Node3D
-	_has_limbs = _leg_l != null and _leg_r != null and _arm_l != null and _arm_r != null
-	if _character_name.is_empty():
+		if model == null:
+			model = ASSETS.fallback_character(
+				Color(0.60, 0.20, 0.18), Color(0.30, 0.12, 0.12), CHARACTERS.ENEMY_TINT
+			)
 		_character_name = pick.capitalize().replace("_", " ")
+	model.name = "Body"
+	ASSETS.fit_to_height(model, CHARACTERS.ENEMY_HEIGHT)
+	visual_holder.add_child(model)
+	visual_holder.register_character(model)
+	_body = model
+	if _character_name.is_empty():
+		_character_name = "Dushman"
 	if show_name:
 		_add_name_tag(model)
 	_collect_flash_materials(model)
+
+
+func _load_animated_character() -> Node3D:
+	if not ResourceLoader.exists(ANIMATED_CHARACTER_PATH):
+		return null
+	var resource := ResourceLoader.load(ANIMATED_CHARACTER_PATH)
+	if not (resource is PackedScene):
+		return null
+	var instance := (resource as PackedScene).instantiate()
+	if not (instance is Node3D):
+		instance.free()
+		return null
+	var model := instance as Node3D
+	model.set_meta("real_glb", true)
+	model.set_meta("asset_path", ANIMATED_CHARACTER_PATH)
+	return model
 
 
 func _add_name_tag(parent: Node3D) -> void:

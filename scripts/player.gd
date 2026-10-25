@@ -28,6 +28,7 @@ enum DropState {
 const WEAPON_MANAGER := preload("res://scripts/weapon_manager.gd")
 const ASSETS := preload("res://scripts/assets.gd")
 const CHARACTERS := preload("res://scripts/character_data.gd")
+const ANIMATED_CHARACTER_PATH := "res://assets/models/characters/player_animated.glb"
 
 @export_group("Movement")
 @export var move_speed: float = 6.0
@@ -422,26 +423,49 @@ func _attach_parachute_mesh() -> void:
 func _build_body() -> void:
 	if not show_body:
 		return
-	var data: Dictionary = CHARACTERS.get_character(character_index)
-	if data.is_empty():
-		return
 
-	var model := ASSETS.build_character_model(
-		String(data.get("model", "male_1")),
-		data.get("body", Color(0.25, 0.45, 0.70)),
-		data.get("accent", Color(0.14, 0.16, 0.22))
-	)
+	# The canonical player is the rigged 17-joint GLB with Idle/Walk clips.
+	# Keep the old character loader only as an offline-development fallback;
+	# CI verifies that the real animated asset is present and playing.
+	var model := _load_animated_character()
+	if model == null:
+		var data: Dictionary = CHARACTERS.get_character(character_index)
+		if data.is_empty():
+			return
+		model = ASSETS.build_character_model(
+			String(data.get("model", "male_1")),
+			data.get("body", Color(0.25, 0.45, 0.70)),
+			data.get("accent", Color(0.14, 0.16, 0.22))
+		)
 	if model == null:
 		return
 
 	model.name = "Body"
+	ASSETS.fit_to_height(model, ASSETS.CHARACTER_HEIGHT)
 	visual_holder.add_child(model)
+	visual_holder.register_character(model)
 
 	if name_tag:
 		_add_name_tag(model, CHARACTERS.display_name(character_index))
 
 	ASSETS.set_render_layer(model, CHARACTERS.PLAYER_BODY_LAYER)
 	camera.cull_mask = camera.cull_mask | (1 << (CHARACTERS.PLAYER_BODY_LAYER - 1))
+
+
+func _load_animated_character() -> Node3D:
+	if not ResourceLoader.exists(ANIMATED_CHARACTER_PATH):
+		return null
+	var resource := ResourceLoader.load(ANIMATED_CHARACTER_PATH)
+	if not (resource is PackedScene):
+		return null
+	var instance := (resource as PackedScene).instantiate()
+	if not (instance is Node3D):
+		instance.free()
+		return null
+	var model := instance as Node3D
+	model.set_meta("real_glb", true)
+	model.set_meta("asset_path", ANIMATED_CHARACTER_PATH)
+	return model
 
 
 func _add_name_tag(parent: Node3D, text: String) -> void:
