@@ -8,6 +8,7 @@ extends Node
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const CHARACTERS := preload("res://scripts/character_data.gd")
+const Assets := preload("res://scripts/assets.gd")
 
 const EXPECTED_MODULAR_BUILDINGS: Array[String] = [
 	"apartment_green",
@@ -67,31 +68,36 @@ func _verify_task1_land_map() -> void:
 	if grass != null:
 		var has_shader_mat: bool = _contains_shader_material(grass)
 		_assert_true(not has_shader_mat, "Task1: GrassTerrain uses textured StandardMaterial3D (no debug ShaderMaterial)")
-		_assert_true(_count_trimesh_colliders(grass) >= 5,
-			"Task1: GrassTerrain & plateau have Trimesh StaticBody3D colliders (%d)" % _count_trimesh_colliders(grass))
+		_assert_true(_count_trimesh_colliders(grass) >= 4,
+			"Task1: all grass tiles have Trimesh StaticBody3D colliders (%d)" % _count_trimesh_colliders(grass))
 
-	# 2. Grand Rajasthani Mahal placed at exact (0, 15, 0) with Trimesh collision
+	var summary: Dictionary = _main._world_summary
+	_assert_true(bool(summary.get("terrain_real", false)), "Task1: all four real terrain_ground.glb tiles loaded")
+	_assert_true(bool(summary.get("mahal_real", false)), "Task1: real rajasthani_mahal_full.glb loaded (no fallback)")
+	_assert_true(bool(summary.get("aravalli_real", false)), "Task1: real Mount Abu terrain loaded (no fallback)")
+
+	# 2. Grand Rajasthani Mahal placed at exact (0, 0, 0) with Trimesh collision
 	var mahal: Node3D = main_node.get_node_or_null("RajasthaniMahal") as Node3D
 	_assert_true(mahal != null, "Task1: RajasthaniMahal placed")
 	if mahal != null:
 		_assert_true(
-			mahal.global_position.distance_to(Vector3(0.0, 15.0, 0.0)) < 0.01,
-			"Task1: RajasthaniMahal at exact (0, 15, 0) -> got %s" % str(mahal.global_position)
+			mahal.global_position.distance_to(Vector3.ZERO) < 0.01,
+			"Task1: RajasthaniMahal at exact (0, 0, 0) -> got %s" % str(mahal.global_position)
 		)
+		_assert_true(bool(mahal.get_meta("real_glb", false)), "Task1: Mahal is the synced GLB, not procedural geometry")
 		_assert_true(_count_meshes(mahal) >= 1, "Task1: RajasthaniMahal has 3D mesh geometry")
 		_assert_true(_count_trimesh_colliders(mahal) >= 1, "Task1: RajasthaniMahal has Trimesh StaticBody3D collider")
 
-	# Live raycast check at center forecourt (0, 26) confirming solid ground at Y >= 15.0m
+	# Live raycast check at center forecourt (0, 26) confirming ground-level collision.
 	var space: PhysicsDirectSpaceState3D = main_node.get_world_3d().direct_space_state
 	var center_hit: Dictionary = _raycast_down(space, Vector2(0.0, 26.0), 90.0)
 	var center_y: float = float(center_hit["position"].y) if not center_hit.is_empty() else -999.0
 	_assert_true(
-		not center_hit.is_empty() and center_y >= 14.9,
-		"Task1: Center plateau raycast hits solid ground at Y=%.2fm" % center_y
+		not center_hit.is_empty() and center_y >= -0.10 and center_y <= 0.20,
+		"Task1: Center forecourt raycast hits solid ground at Y=%.2fm" % center_y
 	)
 
 	# 3. All 11 Modular Buildings placed in named POIs with Trimesh StaticBody3D colliders
-	var summary: Dictionary = _main._world_summary
 	var placed_mods: Dictionary = summary.get("modular_unique_ids", {})
 	for model_id in EXPECTED_MODULAR_BUILDINGS:
 		_assert_true(
@@ -103,17 +109,22 @@ func _verify_task1_land_map() -> void:
 	_assert_true(buildings_root != null, "Task1: Buildings POI container exists")
 	var bldg_count: int = 0
 	var bldg_with_trimesh: int = 0
+	var real_bldg_count: int = 0
 	var pois_seen: Dictionary = {}
 	if buildings_root != null:
 		for b in buildings_root.get_children():
 			bldg_count += 1
 			if b.has_meta("poi"):
 				pois_seen[String(b.get_meta("poi"))] = true
+			if bool(b.get_meta("real_glb", false)):
+				real_bldg_count += 1
 			if _count_trimesh_colliders(b) >= 1:
 				bldg_with_trimesh += 1
 
 	_assert_true(pois_seen.size() >= 3, "Task1: multiple distinct named POIs populated (%d POIs)" % pois_seen.size())
 	_assert_true(bldg_count >= 11, "Task1: >=11 POI buildings placed (%d placed)" % bldg_count)
+	_assert_true(real_bldg_count == bldg_count,
+		"Task1: every POI building is its synced GLB (%d/%d)" % [real_bldg_count, bldg_count])
 	_assert_true(
 		bldg_with_trimesh == bldg_count,
 		"Task1: every placed POI building has Trimesh StaticBody3D (%d/%d)" % [bldg_with_trimesh, bldg_count]
@@ -141,6 +152,40 @@ func _verify_task1_land_map() -> void:
 			not m_hit.is_empty() and mountain_y > 10.0,
 			"Task1: AravalliMountain raycast confirms elevated peak collider (Y=%.2fm)" % mountain_y
 		)
+		_assert_true(bool(mountain.get_meta("real_glb", false)), "Task1: Mount Abu is real synced geometry")
+
+	for i in 2:
+		var hill := main_node.get_node_or_null("GrassTerrain/AravalliFoothill_%d" % i) as Node3D
+		_assert_true(hill != null and bool(hill.get_meta("real_glb", false))
+			and _count_trimesh_colliders(hill) >= 1,
+			"Task1: real terrain_hill_large.glb foothill %d has Trimesh collision" % i)
+
+	# 5. Designated garage vehicles and every scattered tree/rock use real Trimesh collision.
+	var vehicles := main_node.get_node_or_null("Vehicles") as Node3D
+	_assert_true(vehicles != null and vehicles.get_child_count() == 7,
+		"Task1: all seven designated garage vehicles placed")
+	var real_vehicles: int = 0
+	var trimesh_vehicles: int = 0
+	if vehicles != null:
+		for vehicle in vehicles.get_children():
+			if bool(vehicle.get_meta("real_glb", false)):
+				real_vehicles += 1
+			if _count_trimesh_colliders(vehicle) >= 1:
+				trimesh_vehicles += 1
+	_assert_true(real_vehicles == 7 and trimesh_vehicles == 7,
+		"Task1: seven real vehicles have Trimesh collision (%d real, %d colliding)" % [
+			real_vehicles, trimesh_vehicles
+		])
+	for kind in ["tree", "rock"]:
+		for variant in 5:
+			_assert_true(Assets.nature_mesh(kind, variant) != null,
+				"Task1: real %s GLB variant %d is available for nature scatter" % [kind, variant])
+	var nature_props: int = int(summary.get("nature_collidable_props", 0))
+	var nature_trimesh: int = int(summary.get("nature_trimesh_props", 0))
+	_assert_true(nature_props > 0 and nature_trimesh == nature_props,
+		"Task1: every scattered tree/rock has StaticBody3D Trimesh collision (%d/%d)" % [
+			nature_trimesh, nature_props
+		])
 
 
 # ===================================================== TASK 2 VERIFICATION ====
@@ -157,6 +202,8 @@ func _verify_task2_plane_drop() -> void:
 	_assert_true(plane != null and is_instance_valid(plane), "Task2: CargoPlane spawned")
 	if plane == null:
 		return
+	_assert_true(bool(plane.get_meta("real_glb", false)),
+		"Task2: real vehicles/plane_cargo_elite.glb loaded (no fallback)")
 
 	_assert_true(
 		absf(plane.global_position.y - 300.0) < 0.05,
