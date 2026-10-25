@@ -46,6 +46,7 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @onready var wall_check: RayCast3D = $WallCheck
 @onready var visual_holder = $VisualHolder
 
+var footstep_audio: AudioStreamPlayer3D = null
 var health: float = 200.0
 var is_dead: bool = false
 
@@ -53,6 +54,7 @@ var _player = null                     ## dynamic (player.gd wala node)
 var _materials: Array[StandardMaterial3D] = []
 var _base_colors: Array[Color] = []
 var _attack_timer: float = 0.0
+var _step_timer: float = 0.0
 var _flash_timer: float = 0.0
 var _avoid_side: float = 1.0
 
@@ -74,10 +76,23 @@ func _ready() -> void:
 	add_to_group("enemy")
 	health = max_health
 	_avoid_side = 1.0 if randf() < 0.5 else -1.0
+	_setup_audio()
 
 	_build_body()
 	_build_health_bar()
 	_find_player()
+
+
+func _setup_audio() -> void:
+	# Enemies are melee-only; positional footsteps telegraph their approach.
+	footstep_audio = AudioStreamPlayer3D.new()
+	footstep_audio.name = "FootstepAudio"
+	footstep_audio.stream = preload("res://assets/sounds/footstep.wav")
+	footstep_audio.max_polyphony = 2
+	footstep_audio.volume_db = -7.0
+	footstep_audio.unit_size = 5.0
+	footstep_audio.max_distance = 35.0
+	add_child(footstep_audio)
 
 
 ## Random character model se dushman ka body banao (gehra laal tint).
@@ -259,6 +274,19 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_dir.x * move_speed
 	velocity.z = move_dir.z * move_speed
 	move_and_slide()
+	_update_footsteps(delta)
+
+
+func _update_footsteps(delta: float) -> void:
+	var ground_speed := Vector2(velocity.x, velocity.z).length()
+	if not is_on_floor() or ground_speed <= 0.1:
+		_step_timer = 0.0
+		return
+	_step_timer += delta
+	if _step_timer >= 0.5:
+		_step_timer = fmod(_step_timer, 0.5)
+		if footstep_audio != null:
+			footstep_audio.play()
 
 
 ## Optional legacy limb animation. OBJ/no-bone models skip this; the shared

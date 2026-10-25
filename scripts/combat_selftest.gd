@@ -148,6 +148,14 @@ func _run_checks() -> void:
 	_check(int(pool_before.get("tracers", 0)) == 32,
 		"Pool: visual tracers are also preallocated")
 
+	_check(_player.shoot_audio != null and _player.shoot_audio.name == "ShootAudio"
+		and _player.shoot_audio.stream != null and _player.shoot_audio.max_polyphony == 5,
+		"Audio: ShootAudio has the generated gunshot stream and 5-shot polyphony")
+	_check(_player.footstep_audio != null and _player.footstep_audio.name == "FootstepAudio"
+		and _player.footstep_audio.stream != null and _enemy.footstep_audio != null
+		and _enemy.footstep_audio.stream != null,
+		"Audio: Player and Enemy have generated positional footstep streams")
+
 	# Remove random spread so this test measures raycast/damage behavior only.
 	var weapon: Dictionary = _player.weapon_manager.get_current()
 	weapon["spread"] = 0.0
@@ -162,6 +170,7 @@ func _run_checks() -> void:
 	_check(_player.is_sprinting, "RUN toggle can be enabled through player API")
 	_player.shoot()
 	_check(not _player.is_sprinting, "successful hitscan fire cancels the RUN toggle")
+	_check(_player.shoot_audio.playing, "Audio: successful hitscan fire starts ShootAudio playback")
 	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
 	var expected_origin: Vector3 = camera.project_ray_origin(crosshair)
 	var expected_direction: Vector3 = camera.project_ray_normal(crosshair).normalized()

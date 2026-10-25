@@ -11,6 +11,11 @@ build ya game kabhi is wajah se nahi rukta.
 
 APK **GitHub Actions** se automatic ban jata hai, PC pe Godot install karne ki zaroorat nahi.
 
+> **Sound files build-time generate hote hain:** binary WAVs Git me track nahi hote.
+> Local Godot import se pehle `python3 tools/generate_sounds.py` chalao. CI ye script
+> Godot import/export se pehle khud chalata hai aur 44.1kHz 16-bit mono `shoot.wav`
+> + `footstep.wav` banata hai.
+
 ## Game launch flow (UI)
 
 ```
@@ -92,6 +97,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 - Normal walk **6 m/s**; mobile **RUN toggle** joystick ke saath **9 m/s** deta hai, bright ON/OFF feedback ke saath. Sprint sirf actual run movement me EP drain karta hai; EP 0 pe RUN OFF aur restart ke liye 20 EP chahiye. Firing RUN ko turant cancel karke HUD ko OFF dikhati hai
 - Enemy marne pe **+10 score**
 - Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
+- Procedural positional audio: har successful shot pe gunshot (5-voice overlap), ground movement pe 0.4s footsteps, actual sprint pe 0.25s; approaching melee enemies ki footsteps bhi distance ke saath sunai deti hain
 - Muzzle flashes (**20**), bullet holes (**50**) aur tracers (**32**) preallocated pools se reuse hote hain
 - Boneless OBJ/GLB characters ke liye shared `VisualHolder` animation: idle breathing, walk/run bob + lean + sway, jump/fall stretch aur landing squash
 - Enemies random (8 fixed puntos me se, player se door) spawn hote hain aur chal ke paas aate hain
@@ -192,6 +198,7 @@ assets/downloaded/             # FBX source (nature/characters/vehicles) — .gd
 assets/downloaded_obj/        # OBJ + MTL source: Weapons 40, Nature 66, Characters 16, Vehicles 7
                                #   .gdignore pada hai (Godot scan nahi karta; CI .glb banata hai)
 assets/models/                 # CI ne banaye .glb (Godot sirf yahin se model uthata hai) — commit NAHI hote
+tools/generate_sounds.py        # Deterministic 44.1kHz/16-bit mono gunshot + footstep WAVs (CI/local)
 tools/obj2glb.py               # OBJ+MTL -> GLB converter (weapons/nature/characters/vehicles, pure python)
 tools/fbx2glb.py               # FBX 7.x -> GLB converter (pure python, koi pip/numpy nahi)
 tools/glbcheck.py              # .glb files ki jaanch (header/accessor/normals) — CI step 7e

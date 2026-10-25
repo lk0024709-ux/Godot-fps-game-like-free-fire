@@ -424,14 +424,19 @@ func _verify_task3_hud_and_multitouch() -> void:
 		not player.is_sprinting and not hud._sprint_active and run_btn.modulate == Color.WHITE and run_btn.scale == Vector2.ONE,
 		"RUN OFF: second tap restores player state and normal button appearance"
 	)
+	player.footstep_audio.stop()
+	player._step_timer = 0.4
 	player._physics_process(1.0 / 60.0)
 	var walk_horizontal_speed := Vector2(player.velocity.x, player.velocity.z).length()
 	_assert_true(
 		absf(walk_horizontal_speed - player.move_speed) < 0.1,
 		"RUN OFF: joystick movement returns to normal 6 m/s walking"
 	)
+	_assert_true(player.footstep_audio.playing, "Audio: grounded walking triggers the 0.4s footstep timer")
 	_tap_touch_button(run_btn, 1)
 	var ep_before_run: float = player.ep
+	player.footstep_audio.stop()
+	player._step_timer = 0.25
 	player._physics_process(1.0 / 60.0)
 	var run_horizontal_speed := Vector2(player.velocity.x, player.velocity.z).length()
 	_assert_true(
@@ -439,6 +444,7 @@ func _verify_task3_hud_and_multitouch() -> void:
 		"RUN + joystick: simultaneous touches raise movement speed to %.2f m/s" % run_horizontal_speed
 	)
 	_assert_true(player.ep < ep_before_run, "RUN drains EP only while sprint movement is active")
+	_assert_true(player.footstep_audio.playing, "Audio: actual sprinting triggers the 0.25s footstep timer")
 
 	var fire_touch: InputEventScreenTouch = InputEventScreenTouch.new()
 	fire_touch.index = 1

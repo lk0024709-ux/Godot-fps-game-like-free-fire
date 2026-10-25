@@ -316,6 +316,17 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 tools/glbcheck.py assets/models 2>&1 | tee -a "$DIAG"
 
+      # Procedural WAVs are build products and must exist before preload/import,
+      # not merely before the final APK export.
+      - name: "7f) Generate procedural shooting + footstep sounds"
+        run: |
+          set -euo pipefail
+          touch "$DIAG"
+          cd "$GITHUB_WORKSPACE"
+          python3 tools/generate_sounds.py 2>&1 | tee -a "$DIAG"
+          test -s assets/sounds/shoot.wav
+          test -s assets/sounds/footstep.wav
+
       - name: "8) Project import (headless)"
         run: |
           set -euo pipefail
