@@ -79,6 +79,7 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var hitscan_range: float = 1200.0
 
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
+@onready var visual_holder = $VisualHolder
 @onready var head: Node3D = $Head
 @onready var spring_arm: SpringArm3D = $Head/SpringArm3D
 @onready var camera: Camera3D = $Head/SpringArm3D/Camera3D
@@ -403,7 +404,7 @@ func _build_body() -> void:
 		return
 
 	model.name = "Body"
-	add_child(model)
+	visual_holder.add_child(model)
 
 	if name_tag:
 		_add_name_tag(model, CHARACTERS.display_name(character_index))
@@ -429,8 +430,9 @@ func _add_name_tag(parent: Node3D, text: String) -> void:
 
 func set_character(index: int) -> void:
 	character_index = index
-	var old := get_node_or_null("Body")
+	var old := visual_holder.get_node_or_null("Body") as Node3D
 	if old != null:
+		visual_holder.remove_child(old)
 		old.queue_free()
 	_build_body()
 
@@ -518,6 +520,22 @@ func _rotate_view(delta_vec: Vector2) -> void:
 	rotate_y(-delta_vec.x * sens_scale)
 	var limit := deg_to_rad(pitch_limit_deg)
 	_pitch = clampf(_pitch - delta_vec.y * sens_scale, -limit, limit)
+
+
+# ============================================================ VISUAL MOTION ===
+
+func _process(_delta: float) -> void:
+	if visual_holder == null:
+		return
+	var horizontal_speed: float = Vector2(velocity.x, velocity.z).length()
+	var vertical_speed: float = velocity.y
+	var grounded: bool = is_on_floor()
+	if drop_state == DropState.IN_PLANE:
+		# Plane velocity must not make the passenger play a falling/running pose.
+		horizontal_speed = 0.0
+		vertical_speed = 0.0
+		grounded = true
+	visual_holder.set_motion(horizontal_speed, vertical_speed, grounded, sprint_speed)
 
 
 # ============================================================ PHYSICS LOOP ====

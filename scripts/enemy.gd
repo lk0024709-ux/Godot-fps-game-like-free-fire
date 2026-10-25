@@ -10,13 +10,14 @@ extends CharacterBody3D
 ##
 ## BODY (Phase 4): pehle yahan ek rang-biranga CAPSULE box tha. Ab downloaded OBJ
 ## character model (male_1..male_5 / female_1..female_5 me se random) lagta hai,
-## uspe gehra laal tint (0.55, 0.12, 0.12), height 1.8m, aur chalte waqt
-## sine-wave animation chalti hai. Model na mile to kuch nahi lagta —
+## uspe gehra laal tint (0.55, 0.12, 0.12), height 1.8m, aur VisualHolder par
+## shared procedural breathing/bob/lean animation chalti hai. Model na mile to kuch nahi lagta —
 ## phir bhi poora gameplay (chase/attack/damage/score) chalta rehta hai.
 ##
 ## NOTE (animation): hamare OBJ characters ek hi mesh hote hain (alag leg_l/arm_l
-## nodes nahi). Aise me poora body halka bounce + side-sway karta hai (chalne jaisa).
-## Jin models me limb nodes mil jayein (purana FBX pack) unke haath-pair alag hilte hain.
+## nodes nahi). Isliye player/enemy ka shared VisualHolder whole-mesh breathing,
+## bob, lean, sway, jump/fall stretch aur landing squash karta hai. Collision/camera
+## ko transform nahi kiya jata. Legacy limb nodes milne par optional swing bhi hai.
 ##
 
 signal died(enemy: Node3D)
@@ -43,6 +44,7 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @export var animation_speed: float = 7.0  ## chalte waqt haath-pair ki raftaar
 
 @onready var wall_check: RayCast3D = $WallCheck
+@onready var visual_holder = $VisualHolder
 
 var health: float = 200.0
 var is_dead: bool = false
@@ -94,7 +96,7 @@ func _build_body() -> void:
 		_character_name = "Dushman"
 
 	model.name = "Body"
-	add_child(model)
+	visual_holder.add_child(model)
 	_body = model
 
 	# 1.8m + pair zameen pe (downloaded model already 1.8m hota hai — safety net)
@@ -195,6 +197,13 @@ func _find_player() -> void:
 		wall_check.add_exception(_player)
 
 
+func _process(_delta: float) -> void:
+	if visual_holder == null:
+		return
+	var horizontal_speed: float = Vector2(velocity.x, velocity.z).length()
+	visual_holder.set_motion(horizontal_speed, velocity.y, is_on_floor(), move_speed)
+
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
@@ -252,24 +261,13 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 
-## Chalte waqt sine-wave animation. Model na ho to kuch nahi hota.
-##
-## Do tarah ke models hain:
-##   * alag limb nodes (leg_l/leg_r/arm_l/arm_r) -> wahi hilte hain
-##   * ek hi mesh (hamare OBJ characters) -> poora body bounce + side sway karta hai
-##     (chalne jaisa lagta hai; limb alag nahi hil sakte kyunki wo alag nodes hi nahi)
+## Optional legacy limb animation. OBJ/no-bone models skip this; the shared
+## VisualHolder animator handles their breathing, bob, lean, sway and landing.
 func _animate_limbs(delta: float) -> void:
-	if _body == null:
+	if _body == null or not _has_limbs:
 		return
 	var speed := animation_speed if _moving else 1.6
 	_walk_phase += delta * speed
-
-	if not _has_limbs:
-		var bounce := sin(_walk_phase * 2.0) * (0.05 if _moving else 0.012)
-		var sway := sin(_walk_phase) * (0.07 if _moving else 0.012)
-		_body.position.y = bounce
-		_body.rotation.z = sway
-		return
 
 	var leg_swing := sin(_walk_phase) * (0.55 if _moving else 0.05)
 	var arm_swing := -leg_swing * 0.7
