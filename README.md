@@ -91,6 +91,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 - Enemy marne pe **+10 score**
 - Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
 - Muzzle flashes (**20**), bullet holes (**50**) aur tracers (**32**) preallocated pools se reuse hote hain
+- Boneless OBJ/GLB characters ke liye shared `VisualHolder` animation: idle breathing, walk/run bob + lean + sway, jump/fall stretch aur landing squash
 - Enemies random (8 fixed puntos me se, player se door) spawn hote hain aur chal ke paas aate hain
 - HP 0 → **GAME OVER** screen + restart button
 - Zameen 40×40 (grid shader), cover boxes/pillars, boundary walls, DirectionalLight with shadows
@@ -158,8 +159,8 @@ scenes/splash.tscn             # Launch scene #1: logo + PRESENTS (1s in / 1.5s 
 scenes/loading.tscn            # Launch scene #2: progress bar + threaded main.tscn load
 scenes/home.tscn               # Launch scene #3: home menu (BATTLE / GUNS / SETTINGS / coins)
 scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (baaki duniya code me banti hai)
-scenes/player.tscn             # Player body + head + SpringArm3D TPV camera + world-space gun + VFX pool
-scenes/enemy.tscn              # Enemy capsule + wall-check ray (body/HP bar code se bante hain)
+scenes/player.tscn             # Player VisualHolder + independent head/camera/collision + gun + VFX pool
+scenes/enemy.tscn              # Enemy VisualHolder + independent capsule/wall-check (body/HP bar code se)
 scenes/combat_selftest.tscn    # TPV, 200 HP, hitscan aur fixed pools ka live physics test
 scenes/bullet.tscn             # Legacy physical bullet (player firing ab ise use nahi karti)
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
@@ -173,6 +174,7 @@ scripts/weapon_manager.gd      # Gun switching, ammo, reload, model lagana (sign
 scripts/assets.gd              # Saare models: pehle downloaded CC0 model, warna code se bana procedural shape
 scripts/character_data.gd      # 10 characters (Rey/Zen/Vihaan/... ) -> kaunsa male/female model + rang
 scripts/player.gd              # Shoulder TPV, 200 HP, camera-center hitscan (Player RID excluded), ADS controls
+scripts/procedural_character_animator.gd # Shared VisualHolder breathing, bob/lean/sway, air stretch, landing squash
 scripts/combat_effects.gd      # Fixed pools: 20 muzzle flashes + 50 bullet holes + 32 visual tracers
 scripts/combat_selftest.gd     # Live physics assertions: camera collision, HP, 4-hit kill, zero firing allocations
 scripts/enemy.gd               # Dushman: 200 HP + overhead HP bar, follow/touch damage, flash + death

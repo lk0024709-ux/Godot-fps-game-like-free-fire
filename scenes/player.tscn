@@ -1,7 +1,8 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/combat_effects.gd" id="2_effects"]
+[ext_resource type="Script" path="res://scripts/procedural_character_animator.gd" id="3_animator"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.4
@@ -18,6 +19,9 @@ script = ExtResource("1_player")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_player")
+
+[node name="VisualHolder" type="Node3D" parent="."]
+script = ExtResource("3_animator")
 
 [node name="Head" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
