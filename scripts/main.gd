@@ -147,6 +147,7 @@ func _ready() -> void:
 	player.drop_state_changed.connect(_on_player_drop_state_changed)
 	player.aim_changed.connect(hud.set_aim_active)
 	player.crouch_changed.connect(hud.set_crouch_active)
+	player.sprint_changed.connect(hud.set_sprint_active)
 	player.died.connect(_on_player_died)
 
 	hud.set_max_health(player.max_health)
@@ -155,6 +156,7 @@ func _ready() -> void:
 	hud.set_ep(int(round(player.ep)))
 	hud.set_medkits(player.medkits)
 	hud.set_score(score)
+	hud.set_sprint_active(player.is_sprinting)
 
 	spawn_timer.wait_time = spawn_interval
 	spawn_timer.timeout.connect(_on_spawn_timer_timeout)

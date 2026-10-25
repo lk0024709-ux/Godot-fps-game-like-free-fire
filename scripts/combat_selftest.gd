@@ -158,7 +158,10 @@ func _run_checks() -> void:
 	_check(ray_query != null and ray_query.exclude.has((_player as CharacterBody3D).get_rid()),
 		"Hitscan: camera ray explicitly excludes Player CharacterBody3D RID")
 
+	_player.set_sprinting(true)
+	_check(_player.is_sprinting, "RUN toggle can be enabled through player API")
 	_player.shoot()
+	_check(not _player.is_sprinting, "successful hitscan fire cancels the RUN toggle")
 	var crosshair: Vector2 = get_viewport().get_visible_rect().size * 0.5
 	var expected_origin: Vector3 = camera.project_ray_origin(crosshair)
 	var expected_direction: Vector3 = camera.project_ray_normal(crosshair).normalized()

@@ -73,6 +73,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 | Kaam | PC | Android |
 |---|---|---|
 | Chalna | `W A S D` (ya arrow keys) | **Left half** me kahin bhi ungli rakho (joystick wahin ban jata hai) |
+| Daurna | `Shift` hold | **RUN** tap = ON/OFF; joystick ke saath **9 m/s**, firing karne par RUN OFF |
 | Dekhna | Mouse | Screen ke **right half pe swipe** |
 | Firing | Left click / Enter (hold = auto fire) | **FIRE** button (bottom-right) |
 | Gun badalna | `Q` pichhla / `E` agla / `mouse wheel`, `1-9` seedha gun | **SWAP** button (agla gun) |
@@ -88,6 +89,7 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 
 - Over-the-shoulder TPV: **0.6m right offset**, **3.5m SpringArm3D**, ADS pe **1.5m + 60 FOV zoom**, wall collision se automatic shortening
 - Player aur enemy dono **200 HP** se shuru; enemy touch = **-10 HP**
+- Normal walk **6 m/s**; mobile **RUN toggle** joystick ke saath **9 m/s** deta hai, bright ON/OFF feedback ke saath. Sprint sirf actual run movement me EP drain karta hai; EP 0 pe RUN OFF aur restart ke liye 20 EP chahiye. Firing RUN ko turant cancel karke HUD ko OFF dikhati hai
 - Enemy marne pe **+10 score**
 - Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
 - Muzzle flashes (**20**), bullet holes (**50**) aur tracers (**32**) preallocated pools se reuse hote hain
