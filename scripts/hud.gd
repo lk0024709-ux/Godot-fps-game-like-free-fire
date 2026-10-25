@@ -97,6 +97,7 @@ var _drop_state: int = 3
 var _drop_countdown: float = 15.0
 var _aim_active: bool = false
 var _crouch_active: bool = false
+var _sprint_active: bool = false
 var _player_altitude: float = 16.0
 
 
@@ -115,14 +116,10 @@ func _ready() -> void:
 	# Bottom-Left Utility Buttons
 	backpack_button.pressed.connect(toggle_weapon_menu)
 	heal_button.pressed.connect(func() -> void: heal_pressed.emit())
-	sprint_button.pressed.connect(func() -> void:
-		sprint_button.set_active_highlight(true)
-		sprint_changed.emit(true)
-	)
-	sprint_button.released.connect(func() -> void:
-		sprint_button.set_active_highlight(false)
-		sprint_changed.emit(false)
-	)
+	sprint_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	sprint_button.pivot_offset = sprint_button.size * 0.5
+	sprint_button.pressed.connect(_on_run_button_pressed)
+	set_sprint_active(false)
 
 	# Quick Swap / Armory / Full Map / Eject / Restart
 	swap_button.pressed.connect(_on_swap_pressed)
@@ -317,6 +314,14 @@ func set_crouch_active(active: bool) -> void:
 	crouch_button.set_active_highlight(active)
 
 
+func set_sprint_active(active: bool) -> void:
+	_sprint_active = active
+	sprint_button.set_active_highlight(active)
+	sprint_button.modulate = Color(0.80, 1.0, 0.55, 1.0) if active else Color.WHITE
+	sprint_button.scale = Vector2(1.08, 1.08) if active else Vector2.ONE
+	sprint_button.queue_redraw()
+
+
 func set_score(score: int) -> void:
 	score_label.text = "SCORE: %d" % score
 
@@ -345,6 +350,12 @@ func _on_aim_button_pressed() -> void:
 
 func _on_crouch_button_pressed() -> void:
 	crouch_toggled.emit(not _crouch_active)
+
+
+func _on_run_button_pressed() -> void:
+	# TouchButton.release only ends the finger press; RUN remains toggled until next tap.
+	set_sprint_active(not _sprint_active)
+	sprint_changed.emit(_sprint_active)
 
 
 # ============================================================ WEAPONS & BAG ===

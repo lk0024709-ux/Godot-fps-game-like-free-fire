@@ -329,6 +329,7 @@ func _verify_task3_hud_and_multitouch() -> void:
 		"Task3: Bottom-Center HP and EP bars visible"
 	)
 	var fire_btn: Control = hud.fire_button
+	var run_btn: Control = hud.sprint_button
 	var aim_btn: Control = hud.aim_button
 	var jump_btn: Control = hud.jump_button
 	var crouch_btn: Control = hud.crouch_button
@@ -341,6 +342,10 @@ func _verify_task3_hud_and_multitouch() -> void:
 	_assert_true(
 		fire_btn.size.x >= 140.0 and fire_btn.size.y >= 140.0,
 		"Task3: FIRE button is prominently sized (%.0fx%.0f)" % [fire_btn.size.x, fire_btn.size.y]
+	)
+	_assert_true(
+		run_btn != null and run_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"Task3: RUN button accepts independent multi-touch input (MOUSE_FILTER_STOP)"
 	)
 
 	var right_cluster: Array[Control] = [fire_btn, aim_btn, jump_btn, crouch_btn, reload_btn]
@@ -404,11 +409,46 @@ func _verify_task3_hud_and_multitouch() -> void:
 	joy_drag.position = Vector2(140.0, 56.0)
 	hud.joystick._gui_input(joy_drag)
 
+	# RUN is a persistent toggle and must work while joystick finger 0 remains held.
+	_assert_true(
+		absf(player.move_speed - 6.0) < 0.001 and absf(player.run_speed - 9.0) < 0.001,
+		"RUN config: walk speed remains 6.0 m/s and toggle run speed is 9.0 m/s"
+	)
+	_tap_touch_button(run_btn, 1)
+	_assert_true(
+		player.is_sprinting and hud._sprint_active and run_btn.modulate != Color.WHITE and run_btn.scale.x > 1.0,
+		"RUN ON: one tap persists after release with bright color and scale feedback"
+	)
+	_tap_touch_button(run_btn, 1)
+	_assert_true(
+		not player.is_sprinting and not hud._sprint_active and run_btn.modulate == Color.WHITE and run_btn.scale == Vector2.ONE,
+		"RUN OFF: second tap restores player state and normal button appearance"
+	)
+	player._physics_process(1.0 / 60.0)
+	var walk_horizontal_speed := Vector2(player.velocity.x, player.velocity.z).length()
+	_assert_true(
+		absf(walk_horizontal_speed - player.move_speed) < 0.1,
+		"RUN OFF: joystick movement returns to normal 6 m/s walking"
+	)
+	_tap_touch_button(run_btn, 1)
+	var ep_before_run: float = player.ep
+	player._physics_process(1.0 / 60.0)
+	var run_horizontal_speed := Vector2(player.velocity.x, player.velocity.z).length()
+	_assert_true(
+		player.is_sprinting and run_horizontal_speed > player.move_speed + 1.0,
+		"RUN + joystick: simultaneous touches raise movement speed to %.2f m/s" % run_horizontal_speed
+	)
+	_assert_true(player.ep < ep_before_run, "RUN drains EP only while sprint movement is active")
+
 	var fire_touch: InputEventScreenTouch = InputEventScreenTouch.new()
 	fire_touch.index = 1
 	fire_touch.pressed = true
 	fire_touch.position = fire_btn.size * 0.5
 	fire_btn._gui_input(fire_touch)
+	_assert_true(
+		not player.is_sprinting and not hud._sprint_active and run_btn.modulate == Color.WHITE and run_btn.scale == Vector2.ONE,
+		"RUN cancel: firing immediately synchronizes the HUD button back to OFF"
+	)
 
 	var aim_touch: InputEventScreenTouch = InputEventScreenTouch.new()
 	aim_touch.index = 2
@@ -438,6 +478,19 @@ func _verify_task3_hud_and_multitouch() -> void:
 
 
 # ============================================================ HELPERS =========
+
+func _tap_touch_button(button: Control, finger_index: int) -> void:
+	var press := InputEventScreenTouch.new()
+	press.index = finger_index
+	press.pressed = true
+	press.position = button.size * 0.5
+	button._gui_input(press)
+	var release := InputEventScreenTouch.new()
+	release.index = finger_index
+	release.pressed = false
+	release.position = press.position
+	button._gui_input(release)
+
 
 func _raycast_down(space: PhysicsDirectSpaceState3D, xz: Vector2, top_y: float) -> Dictionary:
 	var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(

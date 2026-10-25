@@ -406,6 +406,7 @@ offset_top = -320.0
 offset_right = 272.0
 offset_bottom = -250.0
 grow_vertical = 0
+mouse_filter = 0
 script = ExtResource("3_btn")
 label_text = "RUN"
 icon_kind = "sprint"

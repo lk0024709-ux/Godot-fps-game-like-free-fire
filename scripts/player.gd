@@ -15,6 +15,7 @@ signal medkits_changed(count: int)
 signal drop_state_changed(state: int)
 signal aim_changed(is_aiming: bool)
 signal crouch_changed(is_crouching: bool)
+signal sprint_changed(is_sprinting: bool)
 signal died
 
 enum DropState {
@@ -30,7 +31,9 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 
 @export_group("Movement")
 @export var move_speed: float = 6.0
-@export var sprint_speed: float = 10.0
+@export var run_speed: float = 9.0
+@export var sprint_ep_drain: float = 12.0
+@export var sprint_restart_ep: float = 20.0
 @export var crouch_speed: float = 3.6
 @export var jump_velocity: float = 5.2
 @export var gravity: float = 18.0
@@ -95,8 +98,11 @@ var is_dead: bool = false
 var is_firing: bool = false
 var is_aiming: bool = false
 var is_crouching: bool = false
-var is_sprinting_ui: bool = false
+var is_sprinting: bool = false
 var shots_fired: int = 0
+
+var _sprinting_now: bool = false
+var _sprint_exhausted: bool = false
 
 var hud = null
 
@@ -171,6 +177,7 @@ func enter_plane(plane_node: Node3D, hold_offset: Vector3 = Vector3(0.0, 2.75, 1
 	_plane_ref = plane_node
 	drop_state = DropState.IN_PLANE
 	is_firing = false
+	set_sprinting(false)
 	is_aiming = false
 	is_crouching = false
 	_eject_requested = false
@@ -535,7 +542,7 @@ func _process(_delta: float) -> void:
 		horizontal_speed = 0.0
 		vertical_speed = 0.0
 		grounded = true
-	visual_holder.set_motion(horizontal_speed, vertical_speed, grounded, sprint_speed)
+	visual_holder.set_motion(horizontal_speed, vertical_speed, grounded, run_speed)
 
 
 # ============================================================ PHYSICS LOOP ====
@@ -543,6 +550,7 @@ func _process(_delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	_process_ep_regen(delta)
 	_apply_look_and_stance(delta)
+	_sprinting_now = false
 
 	if is_dead:
 		velocity.x = 0.0
@@ -624,8 +632,13 @@ func _physics_process(delta: float) -> void:
 		velocity.y = jump_velocity
 	_jump_requested = false
 
-	var wants_sprint := (Input.is_action_pressed("sprint") or is_sprinting_ui) \
-		and move_dir.length_squared() > 0.05 and is_on_floor() and not is_aiming and not is_crouching
+	if _sprint_exhausted and ep >= sprint_restart_ep:
+		_sprint_exhausted = false
+	var sprint_input: bool = Input.is_action_pressed("sprint") or is_sprinting
+	var wants_sprint: bool = sprint_input and move_dir.length_squared() > 0.05 \
+		and is_on_floor() and not is_aiming and not is_crouching \
+		and not is_firing and not Input.is_action_pressed("fire") \
+		and ep > 0.0 and not _sprint_exhausted
 
 	var target_speed := move_speed
 	if is_crouching:
@@ -633,8 +646,13 @@ func _physics_process(delta: float) -> void:
 	elif is_aiming:
 		target_speed = move_speed * 0.65
 	elif wants_sprint:
-		target_speed = sprint_speed
+		target_speed = run_speed
+		_sprinting_now = true
 		_bob_time += delta * 11.0
+		_drain_sprint_ep(delta)
+		if _sprint_exhausted:
+			target_speed = move_speed
+			_sprinting_now = false
 
 	velocity.x = move_dir.x * target_speed
 	velocity.z = move_dir.z * target_speed
@@ -654,8 +672,18 @@ func _read_move_input() -> Vector2:
 	return input_dir.limit_length(1.0)
 
 
+func _drain_sprint_ep(delta: float) -> void:
+	var previous_ep: float = ep
+	ep = maxf(0.0, ep - sprint_ep_drain * delta)
+	if int(round(previous_ep)) != int(round(ep)):
+		ep_changed.emit(int(round(ep)))
+	if ep <= 0.0:
+		_sprint_exhausted = true
+		set_sprinting(false)
+
+
 func _process_ep_regen(delta: float) -> void:
-	if is_dead or ep <= 0.0 or health >= max_health:
+	if is_dead or _sprinting_now or ep <= 0.0 or health >= max_health:
 		return
 	var step := minf(ep, ep_regen_rate * delta)
 	ep = maxf(0.0, ep - step)
@@ -689,7 +717,7 @@ func _apply_look_and_stance(delta: float) -> void:
 		target_fov = 88.0
 	elif is_aiming and drop_state == DropState.LANDED:
 		target_fov = ads_fov
-	elif (Input.is_action_pressed("sprint") or is_sprinting_ui) and velocity.length() > move_speed + 0.5:
+	elif _sprinting_now and velocity.length() > move_speed + 0.5:
 		target_fov = sprint_fov
 	camera.fov = lerpf(camera.fov, target_fov, minf(1.0, delta * 11.0))
 
@@ -761,8 +789,12 @@ func toggle_crouch() -> void:
 	set_crouching(not is_crouching)
 
 
-func set_sprinting(active: bool) -> void:
-	is_sprinting_ui = active
+func set_sprinting(state: bool) -> void:
+	if state and (is_dead or drop_state != DropState.LANDED or ep <= 0.0 or _sprint_exhausted):
+		state = false
+	is_sprinting = state
+	# Always acknowledge so HUD state cannot remain ON if activation was rejected.
+	sprint_changed.emit(is_sprinting)
 
 
 func use_medkit() -> bool:
@@ -856,6 +888,8 @@ func shoot() -> void:
 			weapon_manager.start_reload()
 		return
 
+	if is_sprinting:
+		set_sprinting(false)
 	var weapon: Dictionary = weapon_manager.get_current()
 	var pellets: int = maxi(1, int(weapon.get("pellets", 1)))
 	var damage: float = float(weapon.get("damage", 10.0))
@@ -938,6 +972,8 @@ func _get_muzzle_position() -> Vector3:
 func start_firing() -> void:
 	if is_dead or drop_state != DropState.LANDED or _menu_open():
 		return
+	if is_sprinting:
+		set_sprinting(false)
 	is_firing = true
 	_trigger_ready = true
 	_fire_timer = 0.0
@@ -975,6 +1011,7 @@ func die() -> void:
 		return
 	is_dead = true
 	is_firing = false
+	set_sprinting(false)
 	is_aiming = false
 	velocity = Vector3.ZERO
 	if weapon_manager != null and is_instance_valid(weapon_manager):
