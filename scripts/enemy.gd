@@ -384,7 +384,7 @@ func _update_looting(delta: float) -> Vector3:
 	if _loot_target == null or _loot_retarget_timer <= 0.0:
 		_find_nearest_loot()
 	if _loot_target != null and is_instance_valid(_loot_target):
-		var offset := _loot_target.global_position - global_position
+		var offset: Vector3 = _loot_target.global_position - global_position
 		offset.y = 0.0
 		if offset.length() <= 1.7:
 			if _loot_target.has_method("consume") and _loot_target.consume():
