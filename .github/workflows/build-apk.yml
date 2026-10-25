@@ -330,6 +330,12 @@ jobs:
           # Requested CI evidence: res://assets/models/ is this workspace path.
           echo "ls -R res://assets/models/ (workspace: assets/models/)"
           ls -R assets/models/ | tee -a "$DIAG"
+          FOLDER_SUMMARY=""
+          for FOLDER in mahal buildings_modular terrain vehicles weapons nature characters; do
+            FOLDER_SUMMARY+="$FOLDER=$(find "assets/models/$FOLDER" -type f | wc -l) files; "
+          done
+          echo "::notice::Synced model folders: $FOLDER_SUMMARY" | tee -a "$DIAG"
+          echo "::notice::Full map + animated rig synced: rajasthani_mahal_full.glb and player_animated.glb" | tee -a "$DIAG"
 
           TEXTURE_COUNT=0
           if [ -d "$ASSET_REPO/docs/textures" ]; then
