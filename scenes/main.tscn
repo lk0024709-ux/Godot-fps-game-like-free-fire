@@ -44,6 +44,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
 
 [node name="Enemies" type="Node3D" parent="."]
 
+[node name="LootWeapons" type="Node3D" parent="."]
+
 [node name="Bullets" type="Node3D" parent="."]
 
 [node name="SpawnTimer" type="Timer" parent="."]

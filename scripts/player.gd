@@ -955,6 +955,7 @@ func shoot() -> void:
 
 	weapon_manager.consume_ammo()
 	shots_fired += 1
+	get_tree().call_group("enemy", "hear_gunshot", global_position, self)
 	_fire_timer = weapon_manager.get_fire_delay()
 	_trigger_ready = false
 
@@ -995,7 +996,7 @@ func _fire_hitscan(aim: Vector3, spread_deg: float, damage: float) -> Vector3:
 	var collider = hit.get("collider")
 	if collider is Node and (collider as Node).is_in_group("enemy"):
 		if collider.has_method("take_damage"):
-			collider.take_damage(damage)
+			collider.take_damage(damage, self)
 		elif collider.has_method("die"):
 			collider.die()
 	if collider is CollisionObject3D and ((collider as CollisionObject3D).collision_layer & 1) != 0:
