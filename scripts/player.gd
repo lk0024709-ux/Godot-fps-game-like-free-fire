@@ -90,6 +90,8 @@ const CHARACTERS := preload("res://scripts/character_data.gd")
 @onready var effects_pool = $CombatEffectsPool
 
 var weapon_manager: Node = null
+var shoot_audio: AudioStreamPlayer3D = null
+var footstep_audio: AudioStreamPlayer3D = null
 var drop_state: int = DropState.LANDED
 var health: int = 200
 var ep: float = 100.0
@@ -113,6 +115,7 @@ var _bob_time: float = 0.0
 var _ep_accum: float = 0.0
 var _holder_base: Vector3 = Vector3.ZERO
 var _fire_timer: float = 0.0
+var _step_timer: float = 0.0
 var _trigger_ready: bool = true
 var _jump_requested: bool = false
 var _camera_ray: PhysicsRayQueryParameters3D = null
@@ -160,6 +163,7 @@ func _ready() -> void:
 	_camera_ray.exclude = [get_rid()]
 
 	_build_body()
+	_setup_audio()
 
 	weapon_manager = WEAPON_MANAGER.new()
 	weapon_manager.name = "WeaponManager"
@@ -168,6 +172,26 @@ func _ready() -> void:
 
 	if not _is_mobile and not DisplayServer.get_name().contains("headless"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+func _setup_audio() -> void:
+	shoot_audio = AudioStreamPlayer3D.new()
+	shoot_audio.name = "ShootAudio"
+	shoot_audio.stream = preload("res://assets/sounds/shoot.wav")
+	shoot_audio.max_polyphony = 5
+	shoot_audio.volume_db = -4.0
+	shoot_audio.unit_size = 8.0
+	shoot_audio.max_distance = 80.0
+	add_child(shoot_audio)
+
+	footstep_audio = AudioStreamPlayer3D.new()
+	footstep_audio.name = "FootstepAudio"
+	footstep_audio.stream = preload("res://assets/sounds/footstep.wav")
+	footstep_audio.max_polyphony = 2
+	footstep_audio.volume_db = -5.0
+	footstep_audio.unit_size = 4.0
+	footstep_audio.max_distance = 30.0
+	add_child(footstep_audio)
 
 
 # ===================================================== PLANE DROP & PARACHUTE =
@@ -657,6 +681,7 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_dir.x * target_speed
 	velocity.z = move_dir.z * target_speed
 	move_and_slide()
+	_update_footsteps(delta)
 
 
 func _read_move_input() -> Vector2:
@@ -670,6 +695,23 @@ func _read_move_input() -> Vector2:
 	if input_dir.length() < 0.14:
 		return Vector2.ZERO
 	return input_dir.limit_length(1.0)
+
+
+func _update_footsteps(delta: float) -> void:
+	# Horizontal speed avoids gravity/ground-snap velocity triggering idle steps.
+	var ground_speed := Vector2(velocity.x, velocity.z).length()
+	var moving_on_ground: bool = not is_dead and drop_state == DropState.LANDED \
+		and is_on_floor() and ground_speed > 0.1
+	if not moving_on_ground:
+		_step_timer = 0.0
+		return
+
+	_step_timer += delta
+	var step_interval: float = 0.25 if _sprinting_now else 0.4
+	if _step_timer >= step_interval:
+		_step_timer = fmod(_step_timer, step_interval)
+		if footstep_audio != null:
+			footstep_audio.play()
 
 
 func _drain_sprint_ep(delta: float) -> void:
@@ -888,6 +930,8 @@ func shoot() -> void:
 			weapon_manager.start_reload()
 		return
 
+	if shoot_audio != null:
+		shoot_audio.play()
 	if is_sprinting:
 		set_sprinting(false)
 	var weapon: Dictionary = weapon_manager.get_current()
