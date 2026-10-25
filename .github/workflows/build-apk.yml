@@ -600,6 +600,26 @@ jobs:
           echo "::error::TPV / HP / hitscan / pool combat self-test failed"
           exit 1
 
+      # ---- 8f4) Independent AI + strict 50-player lobby regression ----
+      - name: "8f4) Battle Royale AI + 50 player lobby test"
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          LOG="$RUNNER_TEMP/battle-royale-selftest.log"
+          set +e
+          godot --headless --path . --fixed-fps 60 --quit-after 240 \
+            scenes/battle_royale_selftest.tscn > "$LOG" 2>&1
+          RC=$?
+          set -e
+          cat "$LOG" | tee -a "$DIAG"
+          if [ "$RC" -eq 0 ] && grep -q "BATTLE_ROYALE_SELFTEST_PASS" "$LOG" \
+            && ! grep -q "SCRIPT ERROR" "$LOG"; then
+            echo "::notice::Independent NPC AI, NPC-vs-NPC combat, 50-player lobby and winner PASS"
+            exit 0
+          fi
+          echo "::error::Battle Royale AI / lobby self-test failed"
+          exit 1
+
       # ---- 8g) UI flow smoke test (splash -> loading -> home -> main) ----
       # Poora UI flow headless chalta hai. `--fixed-fps 60` isliye ki headless me
       # frames bahut tez chalte hain, par Tween/Timer "game time" pe chalte hain —

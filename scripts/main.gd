@@ -14,6 +14,7 @@ extends Node3D
 ##
 
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
+const LOOT_WEAPON := preload("res://scripts/loot_weapon.gd")
 const Assets := preload("res://scripts/assets.gd")
 const AssetLoader := preload("res://scripts/asset_loader.gd")
 const MapData := preload("res://scripts/map_data.gd")
@@ -22,6 +23,8 @@ const RannbhoomiBuilder := preload("res://scripts/rannbhoomi_builder.gd")
 const MAP_ID := "Veergarh"
 const NATURE_CELL_SIZE: float = 250.0
 const PLANE_HOLD_OFFSET := Vector3(0.0, 2.75, 11.5)
+const LOBBY_SIZE: int = 50
+const MAX_NPCS: int = LOBBY_SIZE - 1
 
 @export_group("Plane Drop")
 @export var plane_drop_enabled: bool = true
@@ -32,12 +35,13 @@ const PLANE_HOLD_OFFSET := Vector3(0.0, 2.75, 11.5)
 @export var plane_start: Vector3 = Vector3(-530.33, 300.0, -530.33)
 @export var plane_target: Vector3 = Vector3(950.0, 300.0, 950.0)
 
-@export_group("Enemy Spawning")
-@export var spawn_interval: float = 2.0
-@export var fastest_spawn_interval: float = 0.95
-@export var max_enemies: int = 8
-@export var min_spawn_distance: float = 18.0
-@export var max_spawn_distance: float = 52.0
+@export_group("50 Player Battle Royale")
+@export var spawn_interval: float = 0.35
+@export var npc_spawn_batch: int = 4
+@export var loot_weapon_count: int = 32
+@export var npc_parachute_height: float = 30.0
+@export var min_spawn_distance: float = 24.0
+@export var max_spawn_distance: float = 260.0
 
 @export_group("Arena")
 @export var arena_size: float = 2000.0
@@ -97,13 +101,17 @@ const PARKED_VEHICLE_SPOTS := [
 @onready var player = $Player
 @onready var hud = $HUD
 @onready var enemy_container: Node3D = $Enemies
+@onready var loot_container: Node3D = $LootWeapons
 @onready var bullet_container: Node3D = $Bullets
 @onready var spawn_timer: Timer = $SpawnTimer
 
 var score: int = 0
 var kills: int = 0
+var alive_players: int = LOBBY_SIZE
 var game_over: bool = false
 
+var _npc_spawned_total: int = 0
+var _ground_match_started: bool = false
 var _building_spots: Array = []
 var _hill_spots: Array = []
 var _world_summary: Dictionary = {}
@@ -126,6 +134,7 @@ func _ready() -> void:
 	_build_arena()
 	_spawn_vehicles()
 
+	player.add_to_group("br_combatant")
 	player.hud = hud
 	hud.bind_weapon_manager(player.weapon_manager)
 
@@ -156,6 +165,7 @@ func _ready() -> void:
 	hud.set_ep(int(round(player.ep)))
 	hud.set_medkits(player.medkits)
 	hud.set_score(score)
+	hud.set_alive_players(alive_players)
 	hud.set_sprint_active(player.is_sprinting)
 
 	spawn_timer.wait_time = spawn_interval
@@ -248,11 +258,15 @@ func _on_player_drop_state_changed(new_state: int) -> void:
 
 
 func _begin_ground_match() -> void:
+	if _ground_match_started or game_over:
+		return
+	_ground_match_started = true
 	if sun != null:
 		sun.shadow_enabled = true
-	if not game_over and spawn_timer.is_stopped():
+	_spawn_loot_weapons()
+	_spawn_npc_batch()
+	if _npc_spawned_total < MAX_NPCS:
 		spawn_timer.start()
-		_spawn_enemy()
 
 
 func get_cargo_plane() -> Node3D:
@@ -659,18 +673,50 @@ func _add_box(box_pos: Vector3, box_size: Vector3, color: Color) -> void:
 func _on_spawn_timer_timeout() -> void:
 	if game_over or not player.is_landed():
 		return
-	if enemy_container.get_child_count() >= max_enemies:
+	if _npc_spawned_total >= MAX_NPCS or active_npc_count() >= MAX_NPCS:
+		spawn_timer.stop()
 		return
-
-	_spawn_enemy()
-	spawn_timer.wait_time = maxf(fastest_spawn_interval, spawn_interval - float(score) * 0.0015)
+	_spawn_npc_batch()
 
 
-func _spawn_enemy() -> void:
+func _spawn_npc_batch() -> void:
+	var remaining := MAX_NPCS - _npc_spawned_total
+	var batch_size := mini(maxi(1, npc_spawn_batch), remaining)
+	for _i in batch_size:
+		_spawn_enemy()
+	if _npc_spawned_total >= MAX_NPCS:
+		spawn_timer.stop()
+
+
+func _spawn_enemy():
+	if _npc_spawned_total >= MAX_NPCS or active_npc_count() >= MAX_NPCS:
+		return null
+	_npc_spawned_total += 1
 	var enemy = ENEMY_SCENE.instantiate()
+	enemy.npc_id = _npc_spawned_total
 	enemy.died.connect(_on_enemy_died)
 	enemy_container.add_child(enemy)
-	enemy.global_position = _pick_spawn_position()
+	var ground := _pick_spawn_position()
+	enemy.global_position = ground + Vector3(0.0, npc_parachute_height + randf_range(0.0, 12.0), 0.0)
+	return enemy
+
+
+func active_npc_count() -> int:
+	var count := 0
+	for enemy in enemy_container.get_children():
+		if not enemy.is_queued_for_deletion() and not bool(enemy.get("is_dead")):
+			count += 1
+	return count
+
+
+func _spawn_loot_weapons() -> void:
+	if loot_container.get_child_count() > 0:
+		return
+	for i in maxi(0, loot_weapon_count):
+		var loot = LOOT_WEAPON.new()
+		loot.name = "LootWeapon_%02d" % i
+		loot_container.add_child(loot)
+		loot.global_position = _pick_spawn_position() + Vector3(0.0, 0.18, 0.0)
 
 
 func _pick_spawn_position() -> Vector3:
@@ -683,7 +729,7 @@ func _pick_spawn_position() -> Vector3:
 		var x := clampf(center.x + cos(angle) * dist, -half_limit, half_limit)
 		var z := clampf(center.z + sin(angle) * dist, -half_limit, half_limit)
 		var query := PhysicsRayQueryParameters3D.create(
-			Vector3(x, 80.0, z),
+			Vector3(x, 400.0, z),
 			Vector3(x, -5.0, z)
 		)
 		query.collision_mask = 1
@@ -735,21 +781,37 @@ func _on_heal_pressed() -> void:
 func _on_enemy_died(_enemy) -> void:
 	if game_over:
 		return
-	kills += 1
-	score += 10
-	player.add_ep(25)
-	if kills % 2 == 0:
-		player.grant_medkit(1)
-	hud.set_score(score)
+	alive_players = maxi(1, alive_players - 1)
+	hud.set_alive_players(alive_players)
+	# NPC-vs-NPC eliminations change Alive, but never reward the human.
+	if _enemy.get("last_attacker") == player:
+		kills += 1
+		score += 10
+		player.add_ep(25)
+		if kills % 2 == 0:
+			player.grant_medkit(1)
+		hud.set_score(score)
+	if alive_players == 1 and not player.is_dead:
+		_finish_match(true)
 
 
 func _on_player_died() -> void:
+	_finish_match(false)
+
+
+func _finish_match(won: bool) -> void:
 	if game_over:
 		return
 	game_over = true
 	spawn_timer.stop()
 	player.stop_firing()
-	hud.show_game_over(score)
+	player.set_physics_process(false)
+	for enemy in enemy_container.get_children():
+		enemy.set_physics_process(false)
+	if won:
+		hud.show_winner(score)
+	else:
+		hud.show_game_over(score)
 
 
 func _restart() -> void:

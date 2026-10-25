@@ -93,14 +93,17 @@ lockup dikh jata hai. Background ya logo missing ho to procedural fallback — c
 ## 3. Gameplay rules (jo maanga gaya tha)
 
 - Over-the-shoulder TPV: **0.6m right offset**, **3.5m SpringArm3D**, ADS pe **1.5m + 60 FOV zoom**, wall collision se automatic shortening
-- Player aur enemy dono **200 HP** se shuru; enemy touch = **-10 HP**
+- Player aur NPC dono **200 HP** se shuru; armed NPC generic rifle se **25 damage** karta hai
+- Strict **50-player lobby = 1 human + 49 total NPCs**, dead NPCs respawn nahi hote. HUD `PLAYERS ALIVE` dikhata hai; last human standing pe **WINNER WINNER CHICKEN DINNER**
+- Independent NPC minds: **PARACHUTE → LOOTING → PATROLLING → COMBAT**, low HP pe **FLEEING**. NPCs human aur ek-doosre ko clear line-of-sight pe shoot karte hain; NPC-vs-NPC kill se human score nahi badhta
+- NPCs 10s loot search ke baad generic rifle lete hain, 30s landing grace ke baad combat karte hain, 40m vision + wall occlusion aur 50m gunshot hearing/suspicion rakhte hain. Human se 150m+ door NPCs ka complex AI culled hota hai
 - Normal walk **6 m/s**; mobile **RUN toggle** joystick ke saath **9 m/s** deta hai, bright ON/OFF feedback ke saath. Sprint sirf actual run movement me EP drain karta hai; EP 0 pe RUN OFF aur restart ke liye 20 EP chahiye. Firing RUN ko turant cancel karke HUD ko OFF dikhati hai
-- Enemy marne pe **+10 score**
+- Human se enemy marne pe **+10 score**
 - Firing **instant hitscan raycast** hai; physical Area3D bullet spawn nahi hota
 - Procedural positional audio: har successful shot pe gunshot (5-voice overlap), ground movement pe 0.4s footsteps, actual sprint pe 0.25s; approaching melee enemies ki footsteps bhi distance ke saath sunai deti hain
 - Muzzle flashes (**20**), bullet holes (**50**) aur tracers (**32**) preallocated pools se reuse hote hain
 - Boneless OBJ/GLB characters ke liye shared `VisualHolder` animation: idle breathing, walk/run bob + lean + sway, jump/fall stretch aur landing squash
-- Enemies random (8 fixed puntos me se, player se door) spawn hote hain aur chal ke paas aate hain
+- Human landing ke baad 49 NPCs batches me parachute karte hain; 32 lightweight `loot_weapon` pickups unke independent loot goals dete hain
 - HP 0 → **GAME OVER** screen + restart button
 - Zameen 40×40 (grid shader), cover boxes/pillars, boundary walls, DirectionalLight with shadows
 - Touch UI sirf touch-device pe dikhta hai, PC pe nahi
@@ -170,6 +173,7 @@ scenes/main.tscn               # Game scene: sky + sun + player + HUD + timer (b
 scenes/player.tscn             # Player VisualHolder + independent head/camera/collision + gun + VFX pool
 scenes/enemy.tscn              # Enemy VisualHolder + independent capsule/wall-check (body/HP bar code se)
 scenes/combat_selftest.tscn    # TPV, 200 HP, hitscan aur fixed pools ka live physics test
+scenes/battle_royale_selftest.tscn # Independent AI, NPC-vs-NPC, 50-player cap, culling aur victory test
 scenes/bullet.tscn             # Legacy physical bullet (player firing ab ise use nahi karti)
 scenes/hud.tscn                # Crosshair, HP bar, score, GAME OVER panel, joystick + FIRE/JUMP/RELOAD/SWAP/GUNS + gun-picker panel
 

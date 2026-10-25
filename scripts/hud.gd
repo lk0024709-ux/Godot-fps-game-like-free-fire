@@ -44,6 +44,7 @@ const FULL_MAP_TEXTURE: Texture2D = preload("res://assets/ui/rannbhoomi_minimap.
 
 # Top-Right: Score & Weapon readout
 @onready var score_label: Label = $ScoreLabel
+@onready var alive_label: Label = $AliveLabel
 @onready var weapon_label: Label = $WeaponLabel
 @onready var ammo_label: Label = $AmmoLabel
 
@@ -75,6 +76,7 @@ const FULL_MAP_TEXTURE: Texture2D = preload("res://assets/ui/rannbhoomi_minimap.
 
 # Game Over
 @onready var game_over_panel: Control = $GameOverPanel
+@onready var game_over_title: Label = $GameOverPanel/Box/Title
 @onready var final_score_label: Label = $GameOverPanel/Box/FinalScoreLabel
 @onready var restart_button: Button = $GameOverPanel/Box/RestartButton
 
@@ -324,6 +326,10 @@ func set_sprint_active(active: bool) -> void:
 
 func set_score(score: int) -> void:
 	score_label.text = "SCORE: %d" % score
+
+
+func set_alive_players(count: int) -> void:
+	alive_label.text = "PLAYERS ALIVE: %d" % count
 
 
 func flash_damage() -> void:
@@ -603,5 +609,15 @@ func show_game_over(score: int) -> void:
 		full_map_modal.visible = false
 	eject_panel.visible = false
 	drop_status_banner.visible = false
+	game_over_title.text = "ELIMINATED"
+	game_over_title.add_theme_font_size_override("font_size", 44)
+	game_over_title.add_theme_color_override("font_color", Color(1.0, 0.34, 0.28))
 	final_score_label.text = "FINAL SCORE: %d" % score
 	game_over_panel.visible = true
+
+
+func show_winner(score: int) -> void:
+	show_game_over(score)
+	game_over_title.text = "WINNER WINNER\nCHICKEN DINNER"
+	game_over_title.add_theme_font_size_override("font_size", 32)
+	game_over_title.add_theme_color_override("font_color", Color(1.0, 0.86, 0.24))
